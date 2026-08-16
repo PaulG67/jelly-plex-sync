@@ -191,11 +191,7 @@ def start_web(report_store: ReportStore, host: str, port: int) -> ThreadingHTTPS
                 self._send(200, payload, "application/json; charset=utf-8")
                 return
             if path == "/health":
-                healthy = Path(store.path).parent / "healthy"
-                if healthy.exists():
-                    self._send(200, b"ok", "text/plain")
-                else:
-                    self._send(503, b"starting", "text/plain")
+                self._send(200, b"ok", "text/plain")
                 return
             self._send(404, b"not found", "text/plain")
 

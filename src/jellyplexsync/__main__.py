@@ -54,8 +54,16 @@ def main() -> None:
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     report_store = ReportStore(data_dir / "last-report.json")
+    # Web-UI zuerst starten, damit Dry-Run auch bei Sync-Fehlern erreichbar ist.
     if settings.web_enabled:
-        start_web(report_store, settings.web_host, settings.web_port)
+        try:
+            start_web(report_store, settings.web_host, settings.web_port)
+        except OSError:
+            log.exception(
+                "Web-UI konnte Port %s nicht binden. WEB_PORT und Container-Port pruefen.",
+                settings.web_port,
+            )
+            raise
     log.info(
         "jelly-plex-sync starting (interval=%ss, dry_run=%s, web=%s)",
         settings.sleep_duration,
