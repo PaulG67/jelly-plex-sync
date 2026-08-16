@@ -11,44 +11,35 @@ Synchronisiert **gesehenen Status**, **Resume-Position** (nicht fertig angeschau
 
 Matching erfolgt zuerst über Provider-IDs (IMDb, TMDB, TVDB), danach über den Dateinamen.
 
-## Unraid einbinden
+## Unraid: Vorlage + Container hinzufügen
 
-Image (sobald GitHub Actions gelaufen ist): `ghcr.io/paulg67/jelly-plex-sync:latest`
+Ab Unraid 6.10 gibt es **keine Template-Repositories** mehr in den Docker-Einstellungen. Die Vorlage muss als User-Template auf den USB-Stick. Danach erscheint sie unter **Docker → Container hinzufügen → Vorlage**.
 
-Die Workflow-Datei liegt unter `.github/workflows/docker.yml`. Falls der Push ohne `workflow`-Berechtigung erfolgt ist, die Datei einmal mit einem Token, das den Scope `workflow` hat, nach `main` schieben. Danach Paket auf GitHub auf **Public** stellen.
+Image: `ghcr.io/paulg67/jelly-plex-sync:latest`
 
-Ohne fertiges GHCR-Image auf Unraid: Repo klonen und lokal bauen:
+### 1. Vorlage installieren (Unraid-Terminal)
 
 ```bash
-git clone https://github.com/PaulG67/jelly-plex-sync.git
-cd jelly-plex-sync
-docker build -t ghcr.io/paulg67/jelly-plex-sync:latest .
+wget -O /boot/config/plugins/dockerMan/templates-user/my-jelly-plex-sync.xml \
+  https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/unraid/my-jelly-plex-sync.xml
 ```
 
-### Variante A: Template-Repository (empfohlen)
+Oder dieselbe Datei per Samba nach `\\TOWER\flash\config\plugins\dockerMan\templates-user\my-jelly-plex-sync.xml` kopieren.
 
-1. Unraid → **Einstellungen → Docker** → **Template Repositories**
-2. Diese URL ergänzen:
+### 2. Container anlegen
 
-   `https://github.com/PaulG67/jelly-plex-sync`
-
-3. Speichern
-4. Docker → **Add Container** → Template **jelly-plex-sync**
-5. Felder ausfüllen:
-   - **Plex URL** z. B. `http://192.168.1.10:32400` (LAN-IP, nicht `localhost` aus dem Container)
-   - **Plex Token** ([Anleitung](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/))
+1. **Docker** → **Container hinzufügen**
+2. Bei **Vorlage** den Eintrag **jelly-plex-sync** wählen (User-Templates stehen oben in der Liste)
+3. Ausfüllen:
+   - **Plex URL** z. B. `http://192.168.1.10:32400` (LAN-IP, nicht `localhost`)
+   - **Plex Token**
    - **Jellyfin URL** z. B. `http://192.168.1.10:8096`
-   - **Jellyfin API Key** (Dashboard → API Keys)
-   - **User Mapping** wenn die Namen anders sind: `PlexName=JellyfinName`
-6. Appdata-Pfad belassen: `/mnt/user/appdata/jelly-plex-sync`
-7. Beim ersten Mal optional `DRY_RUN=true`, Logs prüfen, danach auf `false`
+   - **Jellyfin API Key**
+   - **User Mapping** falls die Namen anders sind: `PlexName=JellyfinName`
+4. Appdata belassen: `/mnt/user/appdata/jelly-plex-sync`
+5. **Anwenden**
 
-### Variante B: Image manuell
-
-Repository: `ghcr.io/paulg67/jelly-plex-sync:latest`  
-Volume: `/mnt/user/appdata/jelly-plex-sync` → `/data`
-
-Falls das GHCR-Image privat ist: GitHub → Paket → *Change package visibility* auf **Public**, oder in Unraid ein GitHub-Token hinterlegen.
+Falls das Image nicht gezogen wird: auf GitHub das Paket [jelly-plex-sync](https://github.com/PaulG67/jelly-plex-sync/pkgs/container/jelly-plex-sync) auf **Public** stellen.
 
 ## Tokens
 
