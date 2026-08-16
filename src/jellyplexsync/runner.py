@@ -102,7 +102,7 @@ class SyncRunner:
             jellyfin.apply(action.jellyfin_user_id, stub, played, position)
         else:
             if played:
-                plex.mark_played(action.dest_item_id)
+                plex.mark_played(action.dest_item_id, action.duration_seconds)
             elif position > 0:
                 plex.set_progress(action.dest_item_id, position, action.duration_seconds or position)
             else:

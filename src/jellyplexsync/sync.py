@@ -120,7 +120,7 @@ class SyncEngine:
             if self.settings.sync_from_plex_to_jellyfin:
                 self._direction(plex_items, jelly_index, "jellyfin", jelly_user["id"], stats, report)
             if self.settings.sync_from_jellyfin_to_plex:
-                self._direction(jelly_items, plex_index, "plex", None, stats, report)
+                self._direction(jelly_items, plex_index, "plex", jelly_user["id"], stats, report)
 
     def _remember_new(self, server: str, items: list[WatchState], report: SyncReport | None) -> int:
         count = 0
@@ -207,7 +207,7 @@ class SyncEngine:
             jelly_item = dest if dest.server == "jellyfin" else source
         else:
             if played:
-                self.plex.mark_played(dest.item_id)
+                self.plex.mark_played(dest.item_id, dest.duration_seconds or source.duration_seconds)
             elif position > 0:
                 self.plex.set_progress(dest.item_id, position, dest.duration_seconds or source.duration_seconds)
             plex_item = dest if dest.server == "plex" else source

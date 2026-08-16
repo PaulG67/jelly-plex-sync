@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jelly-plex-sync"
-version = "1.0.5"
+version = "1.0.6"
 description = "Stable watch-status and resume-point sync between Plex and Jellyfin"
 readme = "README.md"
 requires-python = ">=3.12"
