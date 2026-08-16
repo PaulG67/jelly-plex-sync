@@ -57,17 +57,23 @@ PAGE = """<!DOCTYPE html>
     .badge.live { background: color-mix(in srgb, var(--ok) 22%, transparent); color: #bbf7d0; }
     .badge.err { background: #7f1d1d; color: #fecaca; }
     .badge.run { background: #1e3a5f; color: #93c5fd; }
-    table {
-      width: 100%;
-      border-collapse: collapse;
+    .badge.on { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #bfdbfe; }
+    .change {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
-      overflow: hidden;
+      padding: 1rem 1.1rem;
+      margin-bottom: .75rem;
     }
-    th, td { text-align: left; padding: .7rem .85rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
-    tr:last-child td { border-bottom: none; }
+    .change h3 { margin: 0 0 .55rem; font-size: 1.05rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: .55rem .9rem;
+      font-size: .92rem;
+    }
+    .grid .k { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+    .grid .v { margin-top: .15rem; font-family: ui-monospace, Consolas, monospace; font-size: .88rem; }
     .dir { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
     .muted { color: var(--muted); }
     .empty { padding: 2rem; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; }
@@ -81,26 +87,38 @@ PAGE = """<!DOCTYPE html>
       cursor: pointer;
     }
     button.secondary { background: #334155; color: var(--text); }
+    button.active { outline: 2px solid var(--accent); }
     h2 { margin: 2rem 0 .75rem; font-size: 1.1rem; }
     #toast { color: var(--muted); }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <main>
     <h1>jelly-plex-sync</h1>
-    <p class="sub">Sync laeuft periodisch (nicht live waehrend des Abspielens). Pause die Folge kurz, dann „Jetzt synchronisieren“.</p>
+    <p class="sub">Sync laeuft periodisch. Pause die Folge kurz, dann „Jetzt synchronisieren“.</p>
     <div class="row" id="meta"></div>
     <div class="row">
       <button type="button" onclick="syncNow()">Jetzt synchronisieren</button>
+      <button type="button" class="secondary" id="btnChanges" onclick="toggleChangesOnly()">Nur durchzufuehrende Aenderungen</button>
       <button type="button" class="secondary" onclick="loadReport()">Aktualisieren</button>
       <span id="toast"></span>
     </div>
-    <h2>Geplante / ausgefuehrte Aktionen</h2>
-    <div id="actions"></div>
-    <h2>Neu erkannte Titel</h2>
-    <div id="newitems"></div>
+    <div id="overviewBlock">
+      <h2>Kurzuebersicht</h2>
+      <div id="overview"></div>
+      <h2>Neu erkannte Titel</h2>
+      <div id="newitems"></div>
+    </div>
+    <div id="changesBlock" class="hidden">
+      <h2>Durchzufuehrende Aenderungen <span id="changesCount" class="badge on"></span></h2>
+      <div id="changes"></div>
+    </div>
   </main>
   <script>
+    let lastData = null;
+    let changesOnly = false;
+
     function fmtSec(s) {
       s = Math.max(0, Math.round(Number(s) || 0));
       const m = Math.floor(s / 60), r = s % 60;
@@ -108,6 +126,18 @@ PAGE = """<!DOCTYPE html>
     }
     function esc(t) {
       return String(t ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function stateLabel(played, position) {
+      if (played) return "gesehen";
+      return "Position " + fmtSec(position) + " (" + Math.round(Number(position) || 0) + "s)";
+    }
+    function toggleChangesOnly() {
+      changesOnly = !changesOnly;
+      document.getElementById("btnChanges").classList.toggle("active", changesOnly);
+      document.getElementById("btnChanges").textContent = changesOnly
+        ? "Zurueck zur Uebersicht"
+        : "Nur durchzufuehrende Aenderungen";
+      render();
     }
     async function syncNow() {
       document.getElementById("toast").textContent = "Sync wird gestartet…";
@@ -117,11 +147,42 @@ PAGE = """<!DOCTYPE html>
       setTimeout(loadReport, 2000);
       setTimeout(loadReport, 8000);
     }
-    async function loadReport() {
-      const res = await fetch("/api/report");
-      const data = await res.json();
-      const meta = document.getElementById("meta");
+    function renderChanges(actions) {
+      const box = document.getElementById("changes");
+      document.getElementById("changesCount").textContent = String(actions.length);
+      if (!actions.length) {
+        box.innerHTML = '<div class="empty">Keine durchzufuehrenden Aenderungen in diesem Lauf.</div>';
+        return;
+      }
+      box.innerHTML = actions.map((a, i) => `
+        <article class="change">
+          <h3>${i + 1}. ${esc(a.title)}
+            ${a.dry_run ? '<span class="badge dry">wuerde schreiben</span>' : '<span class="badge live">geschrieben</span>'}
+          </h3>
+          <div class="grid">
+            <div><div class="k">Richtung</div><div class="v dir">${esc(a.source_server)} → ${esc(a.dest_server)}</div></div>
+            <div><div class="k">Aktion</div><div class="v">${esc(a.reason)}</div></div>
+            <div><div class="k">Typ</div><div class="v">${esc(a.kind)}</div></div>
+            <div><div class="k">Bibliothek</div><div class="v">${esc(a.library)}</div></div>
+            <div><div class="k">Benutzer</div><div class="v">${esc(a.user || "—")}</div></div>
+            <div><div class="k">Quelle (${esc(a.source_server)})</div><div class="v">${stateLabel(a.source_played, a.source_position)}</div></div>
+            <div><div class="k">Ziel vorher (${esc(a.dest_server)})</div><div class="v">${stateLabel(a.dest_played, a.dest_position)}</div></div>
+            <div><div class="k">Ziel nachher</div><div class="v">${
+              a.reason === "mark watched"
+                ? "gesehen"
+                : "Position " + fmtSec(a.source_position)
+            }</div></div>
+            <div><div class="k">Dry Run</div><div class="v">${a.dry_run ? "ja (noch nicht geschrieben)" : "nein"}</div></div>
+            <div><div class="k">Applied</div><div class="v">${a.applied ? "ja" : "nein"}</div></div>
+          </div>
+        </article>
+      `).join("");
+    }
+    function render() {
+      if (!lastData) return;
+      const data = lastData;
       const stats = data.stats || {};
+      const actions = data.actions || [];
       const badge = data.dry_run
         ? '<span class="badge dry">DRY RUN</span>'
         : '<span class="badge live">LIVE</span>';
@@ -129,41 +190,47 @@ PAGE = """<!DOCTYPE html>
         ? '<span class="badge run">laeuft…</span>'
         : (data.ok === false || data.runner_status === "error"
           ? '<span class="badge err">Fehler</span>' : '');
-      meta.innerHTML = `
+      document.getElementById("meta").innerHTML = `
         <div class="card"><div class="label">Modus</div><div class="value">${badge} ${runBadge}</div></div>
-        <div class="card"><div class="label">Aktionen</div><div class="value">${(data.actions||[]).length}</div></div>
+        <div class="card"><div class="label">Aenderungen</div><div class="value">${actions.length}</div></div>
         <div class="card"><div class="label">Plex → JF</div><div class="value">${stats.updated_jellyfin ?? 0}</div></div>
         <div class="card"><div class="label">JF → Plex</div><div class="value">${stats.updated_plex ?? 0}</div></div>
         <div class="card"><div class="label">Uebersprungen</div><div class="value">${stats.skipped ?? 0}</div></div>
-        <div class="card"><div class="label">Intervall</div><div class="value" style="font-size:1rem">${esc(data.interval_seconds || "—")}s</div></div>
         <div class="card"><div class="label">Letzter Lauf</div><div class="value" style="font-size:.95rem">${esc(data.finished_at || data.message || "—")}</div></div>
       `;
       const err = data.error || data.runner_error;
       if (err) {
-        meta.innerHTML += `<div class="card" style="flex:1 1 100%"><div class="label">Fehler</div><div class="value" style="font-size:1rem;color:#fecaca">${esc(err)}</div></div>`;
+        document.getElementById("meta").innerHTML += `<div class="card" style="flex:1 1 100%"><div class="label">Fehler</div><div class="value" style="font-size:1rem;color:#fecaca">${esc(err)}</div></div>`;
       }
-      const actions = data.actions || [];
-      const box = document.getElementById("actions");
+
+      document.getElementById("overviewBlock").classList.toggle("hidden", changesOnly);
+      document.getElementById("changesBlock").classList.toggle("hidden", !changesOnly);
+
+      if (changesOnly) {
+        renderChanges(actions);
+        return;
+      }
+
+      const overview = document.getElementById("overview");
       if (!data.finished_at && !err) {
-        box.innerHTML = '<div class="empty">Noch kein abgeschlossener Sync. Klicke „Jetzt synchronisieren“.</div>';
+        overview.innerHTML = '<div class="empty">Noch kein Sync. Klicke „Jetzt synchronisieren“.</div>';
       } else if (!actions.length) {
-        box.innerHTML = '<div class="empty">Keine Aktionen. Beim Abspielen: kurz pausieren, dann syncen. Fortschritt wird erst ab ca. 30 Sekunden und bei spuerbarer Differenz uebernommen.</div>';
+        overview.innerHTML = '<div class="empty">Keine Aenderungen. Uebersprungen: ' + (stats.skipped ?? 0) + '. Button „Nur durchzufuehrende Aenderungen“ zeigt Details, sobald welche anstehen.</div>';
       } else {
-        box.innerHTML = `<table>
-          <thead><tr><th>Richtung</th><th>Titel</th><th>Aktion</th><th>Quelle</th><th>Ziel</th></tr></thead>
-          <tbody>${actions.map(a => `
-            <tr>
-              <td class="dir">${esc(a.source_server)} → ${esc(a.dest_server)}</td>
-              <td><strong>${esc(a.title)}</strong><div class="muted">${esc(a.kind)} · ${esc(a.library)}</div></td>
-              <td>${esc(a.reason)}${a.dry_run ? ' <span class="badge dry">wuerde</span>' : ''}</td>
-              <td class="muted">${a.source_played ? "gesehen" : fmtSec(a.source_position)}</td>
-              <td class="muted">${a.dest_played ? "gesehen" : fmtSec(a.dest_position)}</td>
-            </tr>`).join("")}</tbody></table>`;
+        overview.innerHTML = `<div class="empty">${actions.length} Aenderung(en) bereit.
+          <br><br><button type="button" onclick="toggleChangesOnly()">Details der ${actions.length} Aenderungen anzeigen</button></div>`;
       }
       const news = data.new_items || [];
       document.getElementById("newitems").innerHTML = news.length
-        ? `<table><thead><tr><th>Server</th><th>Titel</th></tr></thead><tbody>${news.map(n => `<tr><td class="dir">${esc(n.server)}</td><td>${esc(n.title)}</td></tr>`).join("")}</tbody></table>`
+        ? `<p class="muted">${news.length} Eintraege (gekuerzt auf 20)</p><table style="width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden">
+            <thead><tr><th style="text-align:left;padding:.7rem;color:var(--muted)">Server</th><th style="text-align:left;padding:.7rem;color:var(--muted)">Titel</th></tr></thead>
+            <tbody>${news.slice(0,20).map(n => `<tr><td class="dir" style="padding:.55rem .7rem">${esc(n.server)}</td><td style="padding:.55rem .7rem">${esc(n.title)}</td></tr>`).join("")}</tbody></table>`
         : '<div class="empty">Keine neu erkannten Titel.</div>';
+    }
+    async function loadReport() {
+      const res = await fetch("/api/report");
+      lastData = await res.json();
+      render();
     }
     loadReport();
     setInterval(loadReport, 5000);
