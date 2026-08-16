@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>jelly-plex-sync</Name>
+  <Repository>ghcr.io/paulg67/jelly-plex-sync:latest</Repository>
+  <Registry>https://github.com/PaulG67/jelly-plex-sync/pkgs/container/jelly-plex-sync</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/PaulG67/jelly-plex-sync/issues</Support>
+  <Project>https://github.com/PaulG67/jelly-plex-sync</Project>
+  <Overview>Synchronisiert gesehenen Status, Resume-Position (nicht fertig angeschaut) und neu erkannte Titel zwischen Plex und Jellyfin. Persistenter SQLite-State verhindert Ping-Pong und unnötige Writes.</Overview>
+  <Category>MediaApp:Other Status:Beta</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/unraid/jelly-plex-sync.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/jellyfin/jellyfin-ux/master/branding/SVG/icon-transparent.svg</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <PostArgs/>
+  <GitHub>https://github.com/PaulG67/jelly-plex-sync</GitHub>
+  <Config Name="Plex URL" Target="PLEX_BASEURL" Default="http://192.168.1.10:32400" Mode="" Description="Plex Server URL, z.B. http://PLEX_IP:32400" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.10:32400</Config>
+  <Config Name="Plex Token" Target="PLEX_TOKEN" Default="" Mode="" Description="X-Plex-Token des Plex-Benutzers, dessen Verlauf synchronisiert wird" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Jellyfin URL" Target="JELLYFIN_BASEURL" Default="http://192.168.1.10:8096" Mode="" Description="Jellyfin Server URL, z.B. http://JELLYFIN_IP:8096" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.10:8096</Config>
+  <Config Name="Jellyfin API Key" Target="JELLYFIN_TOKEN" Default="" Mode="" Description="API-Key aus Jellyfin Dashboard → API Keys" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="User Mapping" Target="USER_MAPPING" Default="" Mode="" Description="PlexName=JellyfinName, weitere Paare per Komma" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Library Mapping" Target="LIBRARY_MAPPING" Default="" Mode="" Description="Optional: Movies=Filme,TV Shows=Serien" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Sleep Duration" Target="SLEEP_DURATION" Default="300" Mode="" Description="Sekunden zwischen Sync-Läufen" Type="Variable" Display="always" Required="false" Mask="false">300</Config>
+  <Config Name="Dry Run" Target="DRY_RUN" Default="false" Mode="" Description="true = nur loggen, nichts schreiben" Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+  <Config Name="Plex → Jellyfin" Target="SYNC_FROM_PLEX_TO_JELLYFIN" Default="true" Mode="" Description="Watch-Status von Plex nach Jellyfin übernehmen" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Jellyfin → Plex" Target="SYNC_FROM_JELLYFIN_TO_PLEX" Default="true" Mode="" Description="Watch-Status von Jellyfin nach Plex übernehmen" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Sync Watched" Target="SYNC_WATCHED" Default="true" Mode="" Description="Gesehen-Status synchronisieren" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="Sync Progress" Target="SYNC_PROGRESS" Default="true" Mode="" Description="Resume-Position bei nicht fertig angeschauten Titeln synchronisieren" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="Sync New Items" Target="SYNC_NEW_ITEMS" Default="true" Mode="" Description="Neu hinzugefügte Titel erkennen und beim nächsten Lauf mitsynchronisieren" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="Watched Percent" Target="WATCHED_PERCENT" Default="90" Mode="" Description="Ab diesem Fortschritt als gesehen markieren" Type="Variable" Display="advanced" Required="false" Mask="false">90</Config>
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO" Mode="" Description="INFO oder DEBUG" Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+  <Config Name="SSL Bypass" Target="SSL_BYPASS" Default="false" Mode="" Description="true bei selbstsignierten Zertifikaten" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/jelly-plex-sync" Mode="rw" Description="Persistenter State (SQLite)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/jelly-plex-sync</Config>
+</Container>

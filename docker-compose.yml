@@ -1,0 +1,22 @@
+services:
+  jelly-plex-sync:
+    image: ghcr.io/paulg67/jelly-plex-sync:latest
+    build: .
+    container_name: jelly-plex-sync
+    restart: unless-stopped
+    environment:
+      PLEX_BASEURL: http://plex:32400
+      PLEX_TOKEN: changeme
+      JELLYFIN_BASEURL: http://jellyfin:8096
+      JELLYFIN_TOKEN: changeme
+      USER_MAPPING: plexuser=jellyfinuser
+      SLEEP_DURATION: "300"
+      DRY_RUN: "false"
+      SYNC_FROM_PLEX_TO_JELLYFIN: "true"
+      SYNC_FROM_JELLYFIN_TO_PLEX: "true"
+      SYNC_WATCHED: "true"
+      SYNC_PROGRESS: "true"
+      SYNC_NEW_ITEMS: "true"
+      LOG_LEVEL: INFO
+    volumes:
+      - ./data:/data
