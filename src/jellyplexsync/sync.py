@@ -191,6 +191,12 @@ class SyncEngine:
                     dry_run=self.settings.dry_run,
                     applied=not self.settings.dry_run,
                     user=source.user,
+                    source_item_id=source.item_id,
+                    dest_item_id=dest.item_id,
+                    jellyfin_user_id=jelly_user_id or "",
+                    duration_seconds=dest.duration_seconds or source.duration_seconds,
+                    target_played=played,
+                    target_position=position,
                 )
             )
         if self.settings.dry_run:

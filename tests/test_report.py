@@ -29,3 +29,6 @@ def test_report_store_roundtrip(tmp_path: Path):
     assert latest["dry_run"] is True
     assert latest["actions"][0]["title"] == "Dune"
     assert latest["stats"]["updated_jellyfin"] == 1
+    action_id = latest["actions"][0]["id"]
+    assert store.mark_applied(action_id) is True
+    assert store.get_action(action_id).applied is True

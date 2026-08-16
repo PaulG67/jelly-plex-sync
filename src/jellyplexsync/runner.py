@@ -7,10 +7,12 @@ from pathlib import Path
 from jellyplexsync.config import Settings
 from jellyplexsync.credentials import resolve_jellyfin_token, resolve_plex_token
 from jellyplexsync.jellyfin import JellyfinClient
+from jellyplexsync.models import WatchState
 from jellyplexsync.plex import PlexClient
-from jellyplexsync.report import ReportStore
+from jellyplexsync.report import ReportAction, ReportStore
 from jellyplexsync.store import StateStore
 from jellyplexsync.sync import SyncEngine
+from datetime import datetime, timezone
 
 log = logging.getLogger("jellyplexsync")
 
@@ -30,6 +32,97 @@ class SyncRunner:
             return {"ok": False, "message": "Sync laeuft bereits"}
         self._wake.set()
         return {"ok": True, "message": "Sync gestartet – Seite aktualisiert sich automatisch"}
+
+    def apply_action(self, action_id: str) -> dict:
+        action = self.report_store.get_action(action_id)
+        if action is None:
+            return {"ok": False, "message": "Eintrag nicht gefunden – bitte Sync erneut ausfuehren"}
+        if action.applied:
+            return {"ok": False, "message": "Bereits durchgefuehrt"}
+        if not action.dest_item_id:
+            return {
+                "ok": False,
+                "message": "Alte Liste ohne IDs. Bitte einmal „Jetzt synchronisieren“, dann erneut versuchen.",
+            }
+        with self._lock:
+            if self._running:
+                return {"ok": False, "message": "Vollstaendiger Sync laeuft gerade"}
+            self._running = True
+        try:
+            self._apply_action(action)
+            self.report_store.mark_applied(action_id)
+            return {"ok": True, "message": f"Durchgefuehrt: {action.title}"}
+        except Exception as exc:
+            log.exception("Einzel-Apply fehlgeschlagen: %s", action.title)
+            return {"ok": False, "message": str(exc)}
+        finally:
+            self._running = False
+
+    def _clients(self):
+        settings = self.settings
+        verify = not settings.ssl_bypass
+        plex_token = resolve_plex_token(settings)
+        jelly_token = resolve_jellyfin_token(
+            settings,
+            lambda user, password: JellyfinClient.login(
+                settings.jellyfin_baseurl, user, password, settings.request_timeout, verify
+            ),
+        )
+        plex = PlexClient(settings.plex_baseurl, plex_token, settings.request_timeout, verify)
+        jellyfin = JellyfinClient(
+            settings.jellyfin_baseurl,
+            jelly_token,
+            settings.request_timeout,
+            verify,
+        )
+        return plex, jellyfin
+
+    def _apply_action(self, action: ReportAction) -> None:
+        plex, jellyfin = self._clients()
+        played = action.target_played
+        position = action.target_position
+        if action.dest_server == "jellyfin":
+            if not action.jellyfin_user_id:
+                raise RuntimeError("Keine Jellyfin-User-ID in diesem Eintrag")
+            stub = WatchState(
+                server="jellyfin",
+                user=action.user,
+                item_id=action.dest_item_id,
+                title=action.title,
+                kind=action.kind,
+                library=action.library,
+                path=None,
+                provider_ids={},
+                duration_seconds=action.duration_seconds,
+                position_seconds=position,
+                played=played,
+                play_count=1 if played or position > 0 else 0,
+                last_played=datetime.now(timezone.utc),
+            )
+            jellyfin.apply(action.jellyfin_user_id, stub, played, position)
+        else:
+            if played:
+                plex.mark_played(action.dest_item_id)
+            elif position > 0:
+                plex.set_progress(action.dest_item_id, position, action.duration_seconds or position)
+            else:
+                raise RuntimeError("Nichts anzuwenden (weder gesehen noch Position)")
+
+        data_dir = Path(self.settings.data_dir)
+        store = StateStore(data_dir / "state.db")
+        if action.source_server == "plex":
+            plex_id, jelly_id = action.source_item_id, action.dest_item_id
+        else:
+            plex_id, jelly_id = action.dest_item_id, action.source_item_id
+        store.save(
+            f"{(action.user or 'user').lower()}:{action.kind}:{plex_id}:{jelly_id}",
+            plex_id,
+            jelly_id,
+            played,
+            position,
+            datetime.now(timezone.utc),
+        )
+        log.info("Manuell angewendet: %s (%s)", action.title, action.direction)
 
     def snapshot(self) -> dict:
         report = self.report_store.latest()

@@ -65,7 +65,7 @@ PAGE = """<!DOCTYPE html>
       padding: 1rem 1.1rem;
       margin-bottom: .75rem;
     }
-    .change h3 { margin: 0 0 .55rem; font-size: 1.05rem; }
+    .change h3 { margin: 0 0 .55rem; font-size: 1.05rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -88,6 +88,8 @@ PAGE = """<!DOCTYPE html>
     }
     button.secondary { background: #334155; color: var(--text); }
     button.active { outline: 2px solid var(--accent); }
+    button.apply { background: var(--ok); margin-top: .75rem; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
     h2 { margin: 2rem 0 .75rem; font-size: 1.1rem; }
     #toast { color: var(--muted); }
     .hidden { display: none !important; }
@@ -96,7 +98,7 @@ PAGE = """<!DOCTYPE html>
 <body>
   <main>
     <h1>jelly-plex-sync</h1>
-    <p class="sub">Sync laeuft periodisch. Pause die Folge kurz, dann „Jetzt synchronisieren“.</p>
+    <p class="sub">Bei Dry Run: einzelne Eintraege gezielt mit „Jetzt durchfuehren“ schreiben.</p>
     <div class="row" id="meta"></div>
     <div class="row">
       <button type="button" onclick="syncNow()">Jetzt synchronisieren</button>
@@ -147,17 +149,44 @@ PAGE = """<!DOCTYPE html>
       setTimeout(loadReport, 2000);
       setTimeout(loadReport, 8000);
     }
+    async function applyOne(actionId, btn) {
+      if (!confirm("Diesen einen Eintrag jetzt wirklich schreiben?")) return;
+      btn.disabled = true;
+      btn.textContent = "schreibt…";
+      try {
+        const res = await fetch("/api/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action_id: actionId })
+        });
+        const data = await res.json();
+        document.getElementById("toast").textContent = data.message || "";
+        await loadReport();
+      } catch (e) {
+        document.getElementById("toast").textContent = String(e);
+        btn.disabled = false;
+        btn.textContent = "Jetzt durchfuehren";
+      }
+    }
     function renderChanges(actions) {
       const box = document.getElementById("changes");
-      document.getElementById("changesCount").textContent = String(actions.length);
+      const pending = actions.filter(a => !a.applied);
+      document.getElementById("changesCount").textContent = String(pending.length) + " offen / " + actions.length;
       if (!actions.length) {
         box.innerHTML = '<div class="empty">Keine durchzufuehrenden Aenderungen in diesem Lauf.</div>';
         return;
       }
-      box.innerHTML = actions.map((a, i) => `
+      box.innerHTML = actions.map((a, i) => {
+        const canApply = !a.applied && a.dest_item_id;
+        const applyBtn = a.applied
+          ? '<span class="badge live">bereits durchgefuehrt</span>'
+          : (canApply
+            ? `<button type="button" class="apply" onclick="applyOne('${esc(a.id)}', this)">Jetzt durchfuehren</button>`
+            : '<span class="muted">Bitte Sync erneut – Eintrag ohne IDs (altes Image)</span>');
+        return `
         <article class="change">
           <h3>${i + 1}. ${esc(a.title)}
-            ${a.dry_run ? '<span class="badge dry">wuerde schreiben</span>' : '<span class="badge live">geschrieben</span>'}
+            ${a.applied ? '<span class="badge live">geschrieben</span>' : '<span class="badge dry">Dry Run</span>'}
           </h3>
           <div class="grid">
             <div><div class="k">Richtung</div><div class="v dir">${esc(a.source_server)} → ${esc(a.dest_server)}</div></div>
@@ -168,15 +197,15 @@ PAGE = """<!DOCTYPE html>
             <div><div class="k">Quelle (${esc(a.source_server)})</div><div class="v">${stateLabel(a.source_played, a.source_position)}</div></div>
             <div><div class="k">Ziel vorher (${esc(a.dest_server)})</div><div class="v">${stateLabel(a.dest_played, a.dest_position)}</div></div>
             <div><div class="k">Ziel nachher</div><div class="v">${
-              a.reason === "mark watched"
+              a.target_played || a.reason === "mark watched"
                 ? "gesehen"
-                : "Position " + fmtSec(a.source_position)
+                : "Position " + fmtSec(a.target_position || a.source_position)
             }</div></div>
-            <div><div class="k">Dry Run</div><div class="v">${a.dry_run ? "ja (noch nicht geschrieben)" : "nein"}</div></div>
-            <div><div class="k">Applied</div><div class="v">${a.applied ? "ja" : "nein"}</div></div>
+            <div><div class="k">Dest Item ID</div><div class="v">${esc(a.dest_item_id || "—")}</div></div>
           </div>
-        </article>
-      `).join("");
+          ${applyBtn}
+        </article>`;
+      }).join("");
     }
     function render() {
       if (!lastData) return;
@@ -193,9 +222,9 @@ PAGE = """<!DOCTYPE html>
       document.getElementById("meta").innerHTML = `
         <div class="card"><div class="label">Modus</div><div class="value">${badge} ${runBadge}</div></div>
         <div class="card"><div class="label">Aenderungen</div><div class="value">${actions.length}</div></div>
+        <div class="card"><div class="label">Noch offen</div><div class="value">${actions.filter(a => !a.applied).length}</div></div>
         <div class="card"><div class="label">Plex → JF</div><div class="value">${stats.updated_jellyfin ?? 0}</div></div>
         <div class="card"><div class="label">JF → Plex</div><div class="value">${stats.updated_plex ?? 0}</div></div>
-        <div class="card"><div class="label">Uebersprungen</div><div class="value">${stats.skipped ?? 0}</div></div>
         <div class="card"><div class="label">Letzter Lauf</div><div class="value" style="font-size:.95rem">${esc(data.finished_at || data.message || "—")}</div></div>
       `;
       const err = data.error || data.runner_error;
@@ -215,14 +244,14 @@ PAGE = """<!DOCTYPE html>
       if (!data.finished_at && !err) {
         overview.innerHTML = '<div class="empty">Noch kein Sync. Klicke „Jetzt synchronisieren“.</div>';
       } else if (!actions.length) {
-        overview.innerHTML = '<div class="empty">Keine Aenderungen. Uebersprungen: ' + (stats.skipped ?? 0) + '. Button „Nur durchzufuehrende Aenderungen“ zeigt Details, sobald welche anstehen.</div>';
+        overview.innerHTML = '<div class="empty">Keine Aenderungen in diesem Lauf.</div>';
       } else {
-        overview.innerHTML = `<div class="empty">${actions.length} Aenderung(en) bereit.
-          <br><br><button type="button" onclick="toggleChangesOnly()">Details der ${actions.length} Aenderungen anzeigen</button></div>`;
+        overview.innerHTML = `<div class="empty">${actions.length} Aenderung(en), davon ${actions.filter(a => !a.applied).length} noch offen.
+          <br><br><button type="button" onclick="toggleChangesOnly()">Details + einzeln durchfuehren</button></div>`;
       }
       const news = data.new_items || [];
       document.getElementById("newitems").innerHTML = news.length
-        ? `<p class="muted">${news.length} Eintraege (gekuerzt auf 20)</p><table style="width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden">
+        ? `<p class="muted">${news.length} Eintraege (max. 20)</p><table style="width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden">
             <thead><tr><th style="text-align:left;padding:.7rem;color:var(--muted)">Server</th><th style="text-align:left;padding:.7rem;color:var(--muted)">Titel</th></tr></thead>
             <tbody>${news.slice(0,20).map(n => `<tr><td class="dir" style="padding:.55rem .7rem">${esc(n.server)}</td><td style="padding:.55rem .7rem">${esc(n.title)}</td></tr>`).join("")}</tbody></table>`
         : '<div class="empty">Keine neu erkannten Titel.</div>';
@@ -253,6 +282,13 @@ def start_web(runner, host: str, port: int) -> ThreadingHTTPServer:
             self.end_headers()
             self.wfile.write(body)
 
+        def _read_json(self) -> dict:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0:
+                return {}
+            raw = self.rfile.read(length)
+            return json.loads(raw.decode("utf-8") or "{}")
+
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             if path in {"/", "/index.html"}:
@@ -271,6 +307,12 @@ def start_web(runner, host: str, port: int) -> ThreadingHTTPServer:
             path = urlparse(self.path).path
             if path == "/api/sync-now":
                 payload = json.dumps(runner.request_now()).encode("utf-8")
+                self._send(200, payload, "application/json; charset=utf-8")
+                return
+            if path == "/api/apply":
+                body = self._read_json()
+                action_id = str(body.get("action_id") or "")
+                payload = json.dumps(runner.apply_action(action_id)).encode("utf-8")
                 self._send(200, payload, "application/json; charset=utf-8")
                 return
             self._send(404, b"not found", "text/plain")
