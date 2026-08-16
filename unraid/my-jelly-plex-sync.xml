@@ -9,9 +9,9 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/PaulG67/jelly-plex-sync/issues</Support>
   <Project>https://github.com/PaulG67/jelly-plex-sync</Project>
-  <Overview>Lokaler Watch-Status-Sync zwischen Plex und Jellyfin. Dry-Run unter http://UNRAID-IP:8787. Nicht ins Internet freigeben.</Overview>
+  <Overview>Lokaler Watch-Status-Sync zwischen Plex und Jellyfin. Dry-Run unter http://UNRAID-IP:8788. Nicht ins Internet freigeben.</Overview>
   <Category>MediaApp:Other Status:Beta</Category>
-  <WebUI>http://[IP]:[PORT:8787]</WebUI>
+  <WebUI>http://[IP]:[PORT:8788]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/unraid/my-jelly-plex-sync.xml</TemplateURL>
   <Icon>https://cdn.jsdelivr.net/gh/selfhst/icons/png/jellyfin.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
@@ -23,7 +23,7 @@
   <Requires/>
   <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/jelly-plex-sync" Mode="rw" Description="Persistenter State der Sync-App" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/jelly-plex-sync</Config>
   <Config Name="Plex Appdata" Target="/plex" Default="/mnt/user/appdata/plex" Mode="ro" Description="Plex Appdata Ordner read-only. Token wird lokal gelesen." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/plex</Config>
-  <Config Name="WebUI Port" Target="8787" Default="8787" Mode="tcp" Description="Nur LAN. Nicht am Router freigeben." Type="Port" Display="always" Required="true" Mask="false">8787</Config>
+  <Config Name="WebUI Port" Target="8788" Default="8788" Mode="tcp" Description="Host-Port im Browser. Container-Port und WEB_PORT muessen gleich sein." Type="Port" Display="always" Required="true" Mask="false">8788</Config>
   <Config Name="Plex URL" Target="PLEX_BASEURL" Default="http://172.17.0.1:32400" Mode="" Description="Plex URL auf dem Unraid Host" Type="Variable" Display="always" Required="true" Mask="false">http://172.17.0.1:32400</Config>
   <Config Name="Jellyfin URL" Target="JELLYFIN_BASEURL" Default="http://172.17.0.1:8096" Mode="" Description="Jellyfin URL auf dem Unraid Host" Type="Variable" Display="always" Required="true" Mask="false">http://172.17.0.1:8096</Config>
   <Config Name="Jellyfin Benutzer" Target="JELLYFIN_USERNAME" Default="" Mode="" Description="Lokaler Jellyfin Benutzername" Type="Variable" Display="always" Required="true" Mask="false"></Config>
@@ -37,7 +37,7 @@
   <Config Name="Plex Token optional" Target="PLEX_TOKEN" Default="" Mode="" Description="Nur wenn Appdata-Mount nicht reicht" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
   <Config Name="Jellyfin API Key optional" Target="JELLYFIN_TOKEN" Default="" Mode="" Description="Nur ohne Benutzername" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
   <Config Name="Library Mapping" Target="LIBRARY_MAPPING" Default="" Mode="" Description="Optional: Movies=Filme" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Web Port Env" Target="WEB_PORT" Default="8787" Mode="" Description="Interner Web Port" Type="Variable" Display="advanced" Required="false" Mask="false">8787</Config>
+  <Config Name="Web Port Env" Target="WEB_PORT" Default="8788" Mode="" Description="MUSS gleich dem Container-Port beim WebUI Port sein" Type="Variable" Display="always" Required="false" Mask="false">8788</Config>
   <Config Name="Sync Watched" Target="SYNC_WATCHED" Default="true" Mode="" Description="Gesehen-Status sync" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="Sync Progress" Target="SYNC_PROGRESS" Default="true" Mode="" Description="Resume-Position sync" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="Sync New Items" Target="SYNC_NEW_ITEMS" Default="true" Mode="" Description="Neue Titel einbeziehen" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>

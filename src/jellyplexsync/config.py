@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     web_enabled: bool = True
     web_host: str = "0.0.0.0"
-    web_port: int = 8787
+    web_port: int = 8788
 
     @field_validator(
         "dry_run",

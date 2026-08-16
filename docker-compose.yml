@@ -13,7 +13,7 @@ services:
       SLEEP_DURATION: "300"
       DRY_RUN: "true"
       WEB_ENABLED: "true"
-      WEB_PORT: "8787"
+      WEB_PORT: "8788"
       SYNC_FROM_PLEX_TO_JELLYFIN: "true"
       SYNC_FROM_JELLYFIN_TO_PLEX: "true"
       SYNC_WATCHED: "true"
@@ -21,6 +21,6 @@ services:
       SYNC_NEW_ITEMS: "true"
       LOG_LEVEL: INFO
     ports:
-      - "8787:8787"
+      - "8788:8788"
     volumes:
       - ./data:/data
