@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BeforeValidator, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def _parse_bool(value: Any) -> bool:
@@ -34,6 +34,9 @@ def _parse_mapping(value: Any) -> dict[str, str]:
     return mapping
 
 
+MappingDict = Annotated[dict[str, str], NoDecode, BeforeValidator(_parse_mapping)]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -54,8 +57,8 @@ class Settings(BaseSettings):
     jellyfin_username: str = ""
     jellyfin_password: str = ""
 
-    user_mapping: dict[str, str] = Field(default_factory=dict)
-    library_mapping: dict[str, str] = Field(default_factory=dict)
+    user_mapping: MappingDict = Field(default_factory=dict)
+    library_mapping: MappingDict = Field(default_factory=dict)
     whitelist_users: str = ""
     blacklist_users: str = ""
     whitelist_libraries: str = ""
@@ -91,11 +94,6 @@ class Settings(BaseSettings):
     @classmethod
     def coerce_bool(cls, value: Any) -> bool:
         return _parse_bool(value)
-
-    @field_validator("user_mapping", "library_mapping", mode="before")
-    @classmethod
-    def coerce_mapping(cls, value: Any) -> dict[str, str]:
-        return _parse_mapping(value)
 
     def user_list(self, raw: str) -> set[str]:
         return {part.strip().lower() for part in raw.split(",") if part.strip()}
