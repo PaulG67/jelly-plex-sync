@@ -29,17 +29,29 @@ class JellyfinClient:
     @classmethod
     def login(cls, baseurl: str, username: str, password: str, timeout: int, verify: bool) -> str:
         http = make_client(timeout, verify)
-        response = request(
-            http,
-            "POST",
-            f"{baseurl.rstrip('/')}/Users/AuthenticateByName",
-            json={"Username": username, "Pw": password},
-            headers={
-                "Authorization": AUTH_HEADER,
-                "X-Emby-Authorization": AUTH_HEADER,
-                "Accept": "application/json",
-            },
-        )
+        headers = {
+            "Authorization": AUTH_HEADER,
+            "X-Emby-Authorization": AUTH_HEADER,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        url = f"{baseurl.rstrip('/')}/Users/AuthenticateByName"
+        try:
+            response = request(
+                http,
+                "POST",
+                url,
+                json={"Username": username, "Pw": password or ""},
+                headers=headers,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Jellyfin-Login 401/fehlgeschlagen für User "
+                f"'{username}'. Passwort pruefen ODER besser: in Jellyfin unter "
+                "Dashboard → API-Keys einen Key anlegen und als JELLYFIN_TOKEN setzen "
+                "(Benutzerfeld dann leer lassen). Original: "
+                f"{exc}"
+            ) from exc
         data = response.json()
         token = data.get("AccessToken")
         if not token:
