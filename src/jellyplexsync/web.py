@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 log = logging.getLogger("jellyplexsync")
 
-PAGE = """<!DOCTYPE html>
+PAGE = r"""<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
@@ -43,9 +43,15 @@ PAGE = """<!DOCTYPE html>
       border-radius: 12px;
       padding: .9rem 1rem;
       min-width: 140px;
+      cursor: pointer;
+      transition: border-color .15s, transform .15s;
+      user-select: none;
     }
+    .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
     .card .label { color: var(--muted); font-size: .8rem; }
     .card .value { font-size: 1.35rem; font-weight: 650; margin-top: .2rem; }
+    .card .hint { color: var(--muted); font-size: .72rem; margin-top: .35rem; }
     .badge {
       display: inline-block;
       padding: .2rem .55rem;
@@ -58,6 +64,15 @@ PAGE = """<!DOCTYPE html>
     .badge.err { background: #7f1d1d; color: #fecaca; }
     .badge.run { background: #1e3a5f; color: #93c5fd; }
     .badge.on { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #bfdbfe; }
+    .explain {
+      background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+      line-height: 1.45;
+    }
+    .explain strong { color: var(--accent); }
     .change {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -87,39 +102,59 @@ PAGE = """<!DOCTYPE html>
       cursor: pointer;
     }
     button.secondary { background: #334155; color: var(--text); }
-    button.active { outline: 2px solid var(--accent); }
     button.apply { background: var(--ok); margin-top: .75rem; }
     button:disabled { opacity: .5; cursor: not-allowed; }
     h2 { margin: 2rem 0 .75rem; font-size: 1.1rem; }
     #toast { color: var(--muted); }
-    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <main>
     <h1>jelly-plex-sync</h1>
-    <p class="sub">Bei Dry Run: einzelne Eintraege gezielt mit „Jetzt durchfuehren“ schreiben.</p>
+    <p class="sub">Klicke auf eine Kachel oben, um nur diese Eintraege mit Erlaeuterung zu sehen.</p>
     <div class="row" id="meta"></div>
     <div class="row">
       <button type="button" onclick="syncNow()">Jetzt synchronisieren</button>
-      <button type="button" class="secondary" id="btnChanges" onclick="toggleChangesOnly()">Nur durchzufuehrende Aenderungen</button>
+      <button type="button" class="secondary" onclick="setFilter('all')">Alle Aenderungen</button>
       <button type="button" class="secondary" onclick="loadReport()">Aktualisieren</button>
       <span id="toast"></span>
     </div>
-    <div id="overviewBlock">
-      <h2>Kurzuebersicht</h2>
-      <div id="overview"></div>
-      <h2>Neu erkannte Titel</h2>
-      <div id="newitems"></div>
-    </div>
-    <div id="changesBlock" class="hidden">
-      <h2>Durchzufuehrende Aenderungen <span id="changesCount" class="badge on"></span></h2>
-      <div id="changes"></div>
-    </div>
+    <div id="explain" class="explain hidden"></div>
+    <h2 id="listTitle">Eintraege <span id="listCount" class="badge on"></span></h2>
+    <div id="list"></div>
   </main>
   <script>
     let lastData = null;
-    let changesOnly = false;
+    let filter = "all";
+
+    const FILTERS = {
+      mode: {
+        title: "Modus",
+        explain: (d) => d.dry_run
+          ? "<strong>DRY RUN</strong> — Es wird nichts automatisch geschrieben. Du siehst geplante Aenderungen und kannst einzelne mit „Jetzt durchfuehren“ schreiben."
+          : "<strong>LIVE</strong> — Aenderungen wurden beim Sync bereits auf Plex/Jellyfin geschrieben (soweit kein Fehler)."
+      },
+      all: {
+        title: "Alle Aenderungen",
+        explain: () => "<strong>Alle Aenderungen</strong> dieses Laufs — jede geplante oder ausgefuehrte Sync-Aktion zwischen Plex und Jellyfin."
+      },
+      open: {
+        title: "Noch offen",
+        explain: () => "<strong>Noch offen</strong> — Eintraege, die im Dry Run noch nicht manuell mit „Jetzt durchfuehren“ geschrieben wurden."
+      },
+      p2j: {
+        title: "Plex → Jellyfin",
+        explain: () => "<strong>Plex → Jellyfin</strong> — Stand kommt von Plex und soll (oder wurde) nach Jellyfin uebernommen: gesehen oder Resume-Position."
+      },
+      j2p: {
+        title: "Jellyfin → Plex",
+        explain: () => "<strong>Jellyfin → Plex</strong> — Stand kommt von Jellyfin und soll (oder wurde) nach Plex uebernommen: gesehen oder Resume-Position."
+      },
+      applied: {
+        title: "Bereits geschrieben",
+        explain: () => "<strong>Bereits geschrieben</strong> — Eintraege, die live gesynct oder manuell durchgefuehrt wurden."
+      }
+    };
 
     function fmtSec(s) {
       s = Math.max(0, Math.round(Number(s) || 0));
@@ -133,13 +168,24 @@ PAGE = """<!DOCTYPE html>
       if (played) return "gesehen";
       return "Position " + fmtSec(position) + " (" + Math.round(Number(position) || 0) + "s)";
     }
-    function toggleChangesOnly() {
-      changesOnly = !changesOnly;
-      document.getElementById("btnChanges").classList.toggle("active", changesOnly);
-      document.getElementById("btnChanges").textContent = changesOnly
-        ? "Zurueck zur Uebersicht"
-        : "Nur durchzufuehrende Aenderungen";
+    function isP2j(a) {
+      return a.source_server === "plex" && a.dest_server === "jellyfin";
+    }
+    function isJ2p(a) {
+      return a.source_server === "jellyfin" && a.dest_server === "plex";
+    }
+    function filteredActions() {
+      const actions = (lastData && lastData.actions) || [];
+      if (filter === "open") return actions.filter(a => !a.applied);
+      if (filter === "applied") return actions.filter(a => a.applied);
+      if (filter === "p2j") return actions.filter(isP2j);
+      if (filter === "j2p") return actions.filter(isJ2p);
+      return actions.slice();
+    }
+    function setFilter(next) {
+      filter = next;
       render();
+      document.getElementById("list").scrollIntoView({ behavior: "smooth", block: "start" });
     }
     async function syncNow() {
       document.getElementById("toast").textContent = "Sync wird gestartet…";
@@ -168,12 +214,26 @@ PAGE = """<!DOCTYPE html>
         btn.textContent = "Jetzt durchfuehren";
       }
     }
-    function renderChanges(actions) {
-      const box = document.getElementById("changes");
-      const pending = actions.filter(a => !a.applied);
-      document.getElementById("changesCount").textContent = String(pending.length) + " offen / " + actions.length;
+    function reasonExplain(a) {
+      if (a.reason === "mark watched") {
+        return "Als gesehen markieren, weil die Quelle fertig/gesehen ist und das Ziel noch nicht.";
+      }
+      if (a.reason === "update resume position") {
+        return "Resume-Position uebernehmen, weil du auf der Quelle weiter bist als auf dem Ziel.";
+      }
+      return esc(a.reason);
+    }
+    function renderList(actions) {
+      const box = document.getElementById("list");
+      document.getElementById("listCount").textContent = String(actions.length);
+      const f = FILTERS[filter] || FILTERS.all;
+      document.getElementById("listTitle").childNodes[0].textContent = f.title + " ";
+      const explain = document.getElementById("explain");
+      explain.classList.remove("hidden");
+      explain.innerHTML = (FILTERS[filter] || FILTERS.all).explain(lastData || {});
+
       if (!actions.length) {
-        box.innerHTML = '<div class="empty">Keine durchzufuehrenden Aenderungen in diesem Lauf.</div>';
+        box.innerHTML = '<div class="empty">Keine Eintraege in diesem Filter.</div>';
         return;
       }
       box.innerHTML = actions.map((a, i) => {
@@ -182,14 +242,15 @@ PAGE = """<!DOCTYPE html>
           ? '<span class="badge live">bereits durchgefuehrt</span>'
           : (canApply
             ? `<button type="button" class="apply" onclick="applyOne('${esc(a.id)}', this)">Jetzt durchfuehren</button>`
-            : '<span class="muted">Bitte Sync erneut – Eintrag ohne IDs (altes Image)</span>');
+            : '<span class="muted">Kein Einzel-Apply moeglich (IDs fehlen — Sync erneut)</span>');
         return `
         <article class="change">
           <h3>${i + 1}. ${esc(a.title)}
-            ${a.applied ? '<span class="badge live">geschrieben</span>' : '<span class="badge dry">Dry Run</span>'}
+            ${a.applied ? '<span class="badge live">geschrieben</span>' : '<span class="badge dry">offen / Dry Run</span>'}
+            <span class="badge on">${esc(a.source_server)} → ${esc(a.dest_server)}</span>
           </h3>
+          <p class="muted" style="margin:.2rem 0 .8rem">${reasonExplain(a)}</p>
           <div class="grid">
-            <div><div class="k">Richtung</div><div class="v dir">${esc(a.source_server)} → ${esc(a.dest_server)}</div></div>
             <div><div class="k">Aktion</div><div class="v">${esc(a.reason)}</div></div>
             <div><div class="k">Typ</div><div class="v">${esc(a.kind)}</div></div>
             <div><div class="k">Bibliothek</div><div class="v">${esc(a.library)}</div></div>
@@ -201,60 +262,54 @@ PAGE = """<!DOCTYPE html>
                 ? "gesehen"
                 : "Position " + fmtSec(a.target_position || a.source_position)
             }</div></div>
-            <div><div class="k">Dest Item ID</div><div class="v">${esc(a.dest_item_id || "—")}</div></div>
           </div>
           ${applyBtn}
         </article>`;
       }).join("");
+    }
+    function card(id, label, valueHtml, hint) {
+      const active = filter === id ? " active" : "";
+      return `<div class="card${active}" onclick="setFilter('${id}')">
+        <div class="label">${label}</div>
+        <div class="value">${valueHtml}</div>
+        <div class="hint">${hint}</div>
+      </div>`;
     }
     function render() {
       if (!lastData) return;
       const data = lastData;
       const stats = data.stats || {};
       const actions = data.actions || [];
-      const badge = data.dry_run
+      const openCount = actions.filter(a => !a.applied).length;
+      const p2j = actions.filter(isP2j).length;
+      const j2p = actions.filter(isJ2p).length;
+      const modeHtml = data.dry_run
         ? '<span class="badge dry">DRY RUN</span>'
         : '<span class="badge live">LIVE</span>';
       const runBadge = data.runner_status === "running"
-        ? '<span class="badge run">laeuft…</span>'
+        ? ' <span class="badge run">laeuft…</span>'
         : (data.ok === false || data.runner_status === "error"
-          ? '<span class="badge err">Fehler</span>' : '');
-      document.getElementById("meta").innerHTML = `
-        <div class="card"><div class="label">Modus</div><div class="value">${badge} ${runBadge}</div></div>
-        <div class="card"><div class="label">Aenderungen</div><div class="value">${actions.length}</div></div>
-        <div class="card"><div class="label">Noch offen</div><div class="value">${actions.filter(a => !a.applied).length}</div></div>
-        <div class="card"><div class="label">Plex → JF</div><div class="value">${stats.updated_jellyfin ?? 0}</div></div>
-        <div class="card"><div class="label">JF → Plex</div><div class="value">${stats.updated_plex ?? 0}</div></div>
-        <div class="card"><div class="label">Letzter Lauf</div><div class="value" style="font-size:.95rem">${esc(data.finished_at || data.message || "—")}</div></div>
-      `;
+          ? ' <span class="badge err">Fehler</span>' : '');
+
+      document.getElementById("meta").innerHTML =
+        card("mode", "Modus", modeHtml + runBadge, "Klicken: Erklaerung") +
+        card("all", "Aenderungen", String(actions.length), "Klicken: alle Eintraege") +
+        card("open", "Noch offen", String(openCount), "Klicken: nur offene") +
+        card("p2j", "Plex → JF", String(p2j), "Klicken: nur diese Richtung") +
+        card("j2p", "JF → Plex", String(j2p), "Klicken: nur diese Richtung") +
+        card("applied", "Geschrieben", String(actions.length - openCount), "Klicken: erledigt");
+
       const err = data.error || data.runner_error;
       if (err) {
-        document.getElementById("meta").innerHTML += `<div class="card" style="flex:1 1 100%"><div class="label">Fehler</div><div class="value" style="font-size:1rem;color:#fecaca">${esc(err)}</div></div>`;
+        document.getElementById("meta").innerHTML += `<div class="card" style="flex:1 1 100%;cursor:default"><div class="label">Fehler</div><div class="value" style="font-size:1rem;color:#fecaca">${esc(err)}</div></div>`;
       }
-
-      document.getElementById("overviewBlock").classList.toggle("hidden", changesOnly);
-      document.getElementById("changesBlock").classList.toggle("hidden", !changesOnly);
-
-      if (changesOnly) {
-        renderChanges(actions);
+      if (!data.finished_at && !err) {
+        document.getElementById("list").innerHTML = '<div class="empty">Noch kein Sync. Klicke „Jetzt synchronisieren“.</div>';
+        document.getElementById("explain").classList.add("hidden");
+        document.getElementById("listCount").textContent = "0";
         return;
       }
-
-      const overview = document.getElementById("overview");
-      if (!data.finished_at && !err) {
-        overview.innerHTML = '<div class="empty">Noch kein Sync. Klicke „Jetzt synchronisieren“.</div>';
-      } else if (!actions.length) {
-        overview.innerHTML = '<div class="empty">Keine Aenderungen in diesem Lauf.</div>';
-      } else {
-        overview.innerHTML = `<div class="empty">${actions.length} Aenderung(en), davon ${actions.filter(a => !a.applied).length} noch offen.
-          <br><br><button type="button" onclick="toggleChangesOnly()">Details + einzeln durchfuehren</button></div>`;
-      }
-      const news = data.new_items || [];
-      document.getElementById("newitems").innerHTML = news.length
-        ? `<p class="muted">${news.length} Eintraege (max. 20)</p><table style="width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden">
-            <thead><tr><th style="text-align:left;padding:.7rem;color:var(--muted)">Server</th><th style="text-align:left;padding:.7rem;color:var(--muted)">Titel</th></tr></thead>
-            <tbody>${news.slice(0,20).map(n => `<tr><td class="dir" style="padding:.55rem .7rem">${esc(n.server)}</td><td style="padding:.55rem .7rem">${esc(n.title)}</td></tr>`).join("")}</tbody></table>`
-        : '<div class="empty">Keine neu erkannten Titel.</div>';
+      renderList(filteredActions());
     }
     async function loadReport() {
       const res = await fetch("/api/report");
