@@ -11,12 +11,16 @@ services:
       JELLYFIN_TOKEN: changeme
       USER_MAPPING: plexuser=jellyfinuser
       SLEEP_DURATION: "300"
-      DRY_RUN: "false"
+      DRY_RUN: "true"
+      WEB_ENABLED: "true"
+      WEB_PORT: "8787"
       SYNC_FROM_PLEX_TO_JELLYFIN: "true"
       SYNC_FROM_JELLYFIN_TO_PLEX: "true"
       SYNC_WATCHED: "true"
       SYNC_PROGRESS: "true"
       SYNC_NEW_ITEMS: "true"
       LOG_LEVEL: INFO
+    ports:
+      - "8787:8787"
     volumes:
       - ./data:/data

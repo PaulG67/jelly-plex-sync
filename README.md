@@ -30,16 +30,23 @@ Oder dieselbe Datei per Samba nach `\\TOWER\flash\config\plugins\dockerMan\templ
 
 1. **Docker** → **Container hinzufügen**
 2. Bei **Vorlage** den Eintrag **jelly-plex-sync** wählen
-3. **Kein Port** anlegen, nichts in der Firewall/Router freigeben
+3. **Kein Router-Port** freigeben. Nur im Heimnetz: Web-UI Port **8787**
 4. Ausfüllen:
-   - **Plex URL** / **Jellyfin URL:** `http://172.17.0.1:32400` und `http://172.17.0.1:8096` (Unraid-Host im Docker-Netz, nicht das Internet)
-   - **Plex Appdata:** dein Plex-Ordner, z. B. `/mnt/user/appdata/plex` (read-only) — Token wird lokal aus `Preferences.xml` gelesen
-   - **Jellyfin Benutzer:** dein lokaler Jellyfin-Name. **Passwort leer**, wenn der User keins hat
-   - **User Mapping** nur wenn die Namen anders sind
+   - **Plex URL** / **Jellyfin URL:** `http://172.17.0.1:32400` und `http://172.17.0.1:8096`
+   - **Plex Appdata:** z. B. `/mnt/user/appdata/plex` (read-only)
+   - **Jellyfin Benutzer** (+ Passwort nur wenn nötig)
+   - **Dry Run:** `true` zum Testen
 5. Appdata: `/mnt/user/appdata/jelly-plex-sync`
 6. **Anwenden**
 
-Die App spricht nur Plex und Jellyfin auf demselben Server an. Es gibt keine WebUI und keine Veröffentlichung ins Internet.
+### Dry Run ansehen
+
+1. `DRY_RUN=true` lassen
+2. Im Browser öffnen: `http://UNRAID-IP:8787`
+3. Nach dem ersten Sync-Lauf erscheint die Liste der geplanten Aktionen (gesehen / Resume / neu)
+4. Wenn alles passt: `DRY_RUN=false` und Container neu starten
+
+Die Seite aktualisiert sich alle 15 Sekunden. Nicht am Router nach draußen freigeben — nur LAN.
 
 Falls Plex den Token aus der Appdata nicht akzeptiert: in Plex unter **Settings → Network** bei *List of IP addresses and networks that are allowed without auth* `172.16.0.0/12` eintragen (nur LAN/Docker, nicht WAN).
 
@@ -66,7 +73,9 @@ Plex und Jellyfin brauchen trotzdem eine **lokale Identität**, sonst wissen sie
 | `JELLYFIN_TOKEN` | leer | Optionaler API-Key |
 | `USER_MAPPING` | leer | `plex=jellyfin` oder JSON |
 | `SLEEP_DURATION` | `300` | Intervall in Sekunden |
-| `DRY_RUN` | `false` | Nur loggen |
+| `DRY_RUN` | `false` | Nur loggen / Web-UI anzeigen |
+| `WEB_ENABLED` | `true` | Lokale Web-UI |
+| `WEB_PORT` | `8787` | Port der Übersicht |
 | `SYNC_FROM_PLEX_TO_JELLYFIN` | `true` | |
 | `SYNC_FROM_JELLYFIN_TO_PLEX` | `true` | |
 | `SYNC_WATCHED` | `true` | |

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from jellyplexsync.config import Settings
 from jellyplexsync.matching import find_match, index_states
 from jellyplexsync.models import WatchState
+from jellyplexsync.report import ReportAction, ReportStore, SyncReport
 from jellyplexsync.store import StateStore
 
 log = logging.getLogger("jellyplexsync")
@@ -48,14 +49,43 @@ def pair_key(plex_item: WatchState, jelly_item: WatchState, user_key: str) -> st
 
 
 class SyncEngine:
-    def __init__(self, settings: Settings, store: StateStore, plex, jellyfin) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: StateStore,
+        plex,
+        jellyfin,
+        report_store: ReportStore | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
         self.plex = plex
         self.jellyfin = jellyfin
+        self.report_store = report_store
 
     def run(self) -> dict[str, int]:
-        stats = {"matched": 0, "updated_jellyfin": 0, "updated_plex": 0, "new_items": 0, "skipped": 0, "errors": 0}
+        stats = {
+            "matched": 0,
+            "updated_jellyfin": 0,
+            "updated_plex": 0,
+            "new_items": 0,
+            "skipped": 0,
+            "errors": 0,
+        }
+        report: SyncReport | None = None
+        if self.report_store:
+            report = self.report_store.begin(self.settings.dry_run)
+        try:
+            self._run(stats, report)
+            if self.report_store and report:
+                self.report_store.finish(report, stats)
+        except Exception as exc:
+            if self.report_store and report:
+                self.report_store.finish(report, stats, error=str(exc))
+            raise
+        return stats
+
+    def _run(self, stats: dict[str, int], report: SyncReport | None) -> None:
         plex_users = self.plex.users()
         jelly_users = {user["name"].lower(): user for user in self.jellyfin.users()}
         allowed_users = self.settings.user_list(self.settings.whitelist_users)
@@ -77,30 +107,41 @@ class SyncEngine:
 
             log.info("Syncing user %s <-> %s", plex_name, jelly_user["name"])
             plex_items = self.plex.items_for_user(plex_name, allowed_libs, blocked_libs)
-            jelly_items = self.jellyfin.items_for_user(jelly_user["id"], jelly_user["name"], allowed_libs, blocked_libs)
+            jelly_items = self.jellyfin.items_for_user(
+                jelly_user["id"], jelly_user["name"], allowed_libs, blocked_libs
+            )
             plex_index = index_states(plex_items)
             jelly_index = index_states(jelly_items)
 
             if self.settings.sync_new_items:
-                stats["new_items"] += self._remember_new("plex", plex_items)
-                stats["new_items"] += self._remember_new("jellyfin", jelly_items)
+                stats["new_items"] += self._remember_new("plex", plex_items, report)
+                stats["new_items"] += self._remember_new("jellyfin", jelly_items, report)
 
             if self.settings.sync_from_plex_to_jellyfin:
-                self._direction(plex_items, jelly_index, "jellyfin", jelly_user["id"], stats)
+                self._direction(plex_items, jelly_index, "jellyfin", jelly_user["id"], stats, report)
             if self.settings.sync_from_jellyfin_to_plex:
-                self._direction(jelly_items, plex_index, "plex", None, stats)
-        return stats
+                self._direction(jelly_items, plex_index, "plex", None, stats, report)
 
-    def _remember_new(self, server: str, items: list[WatchState]) -> int:
+    def _remember_new(self, server: str, items: list[WatchState], report: SyncReport | None) -> int:
         count = 0
         for item in items:
             if not self.store.known(server, item.item_id):
                 count += 1
                 log.info("New item on %s: %s", server, item.title)
+                if report is not None:
+                    report.new_items.append({"server": server, "title": item.title})
             self.store.remember(server, item.item_id, item.added_at)
         return count
 
-    def _direction(self, sources: list[WatchState], dest_index: dict[str, WatchState], dest_server: str, jelly_user_id: str | None, stats: dict[str, int]) -> None:
+    def _direction(
+        self,
+        sources: list[WatchState],
+        dest_index: dict[str, WatchState],
+        dest_server: str,
+        jelly_user_id: str | None,
+        stats: dict[str, int],
+        report: SyncReport | None,
+    ) -> None:
         for source in sources:
             dest = find_match(source, dest_index)
             if not dest:
@@ -112,7 +153,7 @@ class SyncEngine:
                 stats["skipped"] += 1
                 continue
             try:
-                self._write(source, dest, dest_server, jelly_user_id, reason)
+                self._write(source, dest, dest_server, jelly_user_id, reason, report)
                 if dest_server == "jellyfin":
                     stats["updated_jellyfin"] += 1
                 else:
@@ -121,21 +162,50 @@ class SyncEngine:
                 stats["errors"] += 1
                 log.exception("Failed updating %s for %s", dest_server, source.title)
 
-    def _write(self, source: WatchState, dest: WatchState, dest_server: str, jelly_user_id: str | None, reason: str) -> None:
+    def _write(
+        self,
+        source: WatchState,
+        dest: WatchState,
+        dest_server: str,
+        jelly_user_id: str | None,
+        reason: str,
+        report: SyncReport | None,
+    ) -> None:
         played = source.effective_played(self.settings.watched_percent)
         position = 0.0 if played else source.position_seconds
         log.info("%s -> %s: %s (%s)", source.server, dest_server, dest.title, reason)
+        if report is not None:
+            report.actions.append(
+                ReportAction(
+                    direction=f"{source.server}->{dest_server}",
+                    title=dest.title or source.title,
+                    kind=source.kind,
+                    library=source.library,
+                    reason=reason,
+                    source_server=source.server,
+                    dest_server=dest_server,
+                    source_played=source.effective_played(self.settings.watched_percent),
+                    dest_played=dest.effective_played(self.settings.watched_percent),
+                    source_position=source.position_seconds,
+                    dest_position=dest.position_seconds,
+                    dry_run=self.settings.dry_run,
+                    applied=not self.settings.dry_run,
+                    user=source.user,
+                )
+            )
         if self.settings.dry_run:
             return
         if dest_server == "jellyfin":
             self.jellyfin.apply(jelly_user_id, dest, played, position)
-            plex_item, jelly_item = source if source.server == "plex" else dest, dest if dest.server == "jellyfin" else source
+            plex_item = source if source.server == "plex" else dest
+            jelly_item = dest if dest.server == "jellyfin" else source
         else:
             if played:
                 self.plex.mark_played(dest.item_id)
             elif position > 0:
                 self.plex.set_progress(dest.item_id, position, dest.duration_seconds or source.duration_seconds)
-            plex_item, jelly_item = dest if dest.server == "plex" else source, source if source.server == "jellyfin" else dest
+            plex_item = dest if dest.server == "plex" else source
+            jelly_item = source if source.server == "jellyfin" else dest
         self.store.save(
             pair_key(plex_item, jelly_item, source.user.lower()),
             plex_item.item_id,

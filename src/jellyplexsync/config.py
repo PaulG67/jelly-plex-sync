@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     progress_delta_seconds: int = 10
     ssl_bypass: bool = False
 
+    web_enabled: bool = True
+    web_host: str = "0.0.0.0"
+    web_port: int = 8787
+
     @field_validator(
         "dry_run",
         "run_only_once",
@@ -81,6 +85,7 @@ class Settings(BaseSettings):
         "sync_progress",
         "sync_new_items",
         "ssl_bypass",
+        "web_enabled",
         mode="before",
     )
     @classmethod

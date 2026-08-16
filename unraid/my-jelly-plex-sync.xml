@@ -9,9 +9,9 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/PaulG67/jelly-plex-sync/issues</Support>
   <Project>https://github.com/PaulG67/jelly-plex-sync</Project>
-  <Overview>Lokaler Watch-Status-Sync zwischen Plex und Jellyfin auf demselben Unraid. Kein Port, kein Internet. Plex-Token kommt aus der Plex-Appdata, Jellyfin per lokalem Benutzername (Passwort optional).</Overview>
+  <Overview>Lokaler Watch-Status-Sync zwischen Plex und Jellyfin. Dry-Run-Ergebnisse und Sync-Aktionen unter http://UNRAID-IP:8787. Nicht ins Internet freigeben.</Overview>
   <Category>MediaApp:Other Status:Beta</Category>
-  <WebUI/>
+  <WebUI>http://[IP]:[PORT:8787]/WebUI>
   <TemplateURL>https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/unraid/my-jelly-plex-sync.xml</TemplateURL>
   <Icon>https://cdn.jsdelivr.net/gh/selfhst/icons/png/jellyfin.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
@@ -29,7 +29,10 @@
   <Config Name="User Mapping" Target="USER_MAPPING" Default="" Mode="" Description="PlexName=JellyfinName, weitere Paare per Komma" Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Library Mapping" Target="LIBRARY_MAPPING" Default="" Mode="" Description="Optional: Movies=Filme,TV Shows=Serien" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Sleep Duration" Target="SLEEP_DURATION" Default="300" Mode="" Description="Sekunden zwischen Sync-Läufen" Type="Variable" Display="always" Required="false" Mask="false">300</Config>
-  <Config Name="Dry Run" Target="DRY_RUN" Default="false" Mode="" Description="true = nur loggen, nichts schreiben" Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+  <Config Name="Dry Run" Target="DRY_RUN" Default="true" Mode="" Description="true = nur anzeigen, nichts schreiben. Ergebnis in der Web-UI." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Web UI" Target="WEB_ENABLED" Default="true" Mode="" Description="Lokale Übersicht der Sync-/Dry-Run-Aktionen" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Web Port" Target="WEB_PORT" Default="8787" Mode="" Description="Interner Port der Web-UI" Type="Variable" Display="advanced" Required="false" Mask="false">8787</Config>
+  <Config Name="WebUI Port" Target="8787" Default="8787" Mode="tcp" Description="Nur LAN. Nicht am Router freigeben." Type="Port" Display="always" Required="false" Mask="false">8787</Config>
   <Config Name="Plex to Jellyfin" Target="SYNC_FROM_PLEX_TO_JELLYFIN" Default="true" Mode="" Description="Watch-Status von Plex nach Jellyfin" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
   <Config Name="Jellyfin to Plex" Target="SYNC_FROM_JELLYFIN_TO_PLEX" Default="true" Mode="" Description="Watch-Status von Jellyfin nach Plex" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
   <Config Name="Sync Watched" Target="SYNC_WATCHED" Default="true" Mode="" Description="Gesehen-Status synchronisieren" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>

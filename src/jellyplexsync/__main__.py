@@ -9,8 +9,10 @@ from jellyplexsync.config import Settings, get_settings
 from jellyplexsync.credentials import resolve_jellyfin_token, resolve_plex_token
 from jellyplexsync.jellyfin import JellyfinClient
 from jellyplexsync.plex import PlexClient
+from jellyplexsync.report import ReportStore
 from jellyplexsync.store import StateStore
 from jellyplexsync.sync import SyncEngine
+from jellyplexsync.web import start_web
 
 
 def setup_logging(level: str) -> None:
@@ -21,7 +23,7 @@ def setup_logging(level: str) -> None:
     )
 
 
-def run_once(settings: Settings) -> None:
+def run_once(settings: Settings, report_store: ReportStore) -> None:
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(data_dir / "state.db")
@@ -40,7 +42,7 @@ def run_once(settings: Settings) -> None:
         settings.request_timeout,
         verify,
     )
-    stats = SyncEngine(settings, store, plex, jellyfin).run()
+    stats = SyncEngine(settings, store, plex, jellyfin, report_store).run()
     (data_dir / "healthy").write_text("ok\n", encoding="utf-8")
     logging.getLogger("jellyplexsync").info("Sync finished: %s", stats)
 
@@ -49,10 +51,20 @@ def main() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
     log = logging.getLogger("jellyplexsync")
-    log.info("jelly-plex-sync starting (interval=%ss, dry_run=%s)", settings.sleep_duration, settings.dry_run)
+    data_dir = Path(settings.data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    report_store = ReportStore(data_dir / "last-report.json")
+    if settings.web_enabled:
+        start_web(report_store, settings.web_host, settings.web_port)
+    log.info(
+        "jelly-plex-sync starting (interval=%ss, dry_run=%s, web=%s)",
+        settings.sleep_duration,
+        settings.dry_run,
+        f"{settings.web_host}:{settings.web_port}" if settings.web_enabled else "off",
+    )
     while True:
         try:
-            run_once(settings)
+            run_once(settings, report_store)
         except Exception:
             log.exception("Sync run failed")
         if settings.run_only_once:
