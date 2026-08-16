@@ -13,7 +13,17 @@ Matching erfolgt zuerst über Provider-IDs (IMDb, TMDB, TVDB), danach über den 
 
 ## Unraid einbinden
 
-Das Image wird nach dem ersten Push nach `main` unter `ghcr.io/paulg67/jelly-plex-sync:latest` veröffentlicht.
+Image (sobald GitHub Actions gelaufen ist): `ghcr.io/paulg67/jelly-plex-sync:latest`
+
+Die Workflow-Datei liegt unter `.github/workflows/docker.yml`. Falls der Push ohne `workflow`-Berechtigung erfolgt ist, die Datei einmal mit einem Token, das den Scope `workflow` hat, nach `main` schieben. Danach Paket auf GitHub auf **Public** stellen.
+
+Ohne fertiges GHCR-Image auf Unraid: Repo klonen und lokal bauen:
+
+```bash
+git clone https://github.com/PaulG67/jelly-plex-sync.git
+cd jelly-plex-sync
+docker build -t ghcr.io/paulg67/jelly-plex-sync:latest .
+```
 
 ### Variante A: Template-Repository (empfohlen)
 
