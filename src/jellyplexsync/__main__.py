@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import logging
 import sys
-import time
 from pathlib import Path
 
-from jellyplexsync.config import Settings, get_settings
-from jellyplexsync.credentials import resolve_jellyfin_token, resolve_plex_token
-from jellyplexsync.jellyfin import JellyfinClient
-from jellyplexsync.plex import PlexClient
+from jellyplexsync.config import get_settings
 from jellyplexsync.report import ReportStore
-from jellyplexsync.store import StateStore
-from jellyplexsync.sync import SyncEngine
+from jellyplexsync.runner import SyncRunner
 from jellyplexsync.web import start_web
 
 
@@ -23,30 +18,6 @@ def setup_logging(level: str) -> None:
     )
 
 
-def run_once(settings: Settings, report_store: ReportStore) -> None:
-    data_dir = Path(settings.data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    store = StateStore(data_dir / "state.db")
-    verify = not settings.ssl_bypass
-    plex_token = resolve_plex_token(settings)
-    jelly_token = resolve_jellyfin_token(
-        settings,
-        lambda user, password: JellyfinClient.login(
-            settings.jellyfin_baseurl, user, password, settings.request_timeout, verify
-        ),
-    )
-    plex = PlexClient(settings.plex_baseurl, plex_token, settings.request_timeout, verify)
-    jellyfin = JellyfinClient(
-        settings.jellyfin_baseurl,
-        jelly_token,
-        settings.request_timeout,
-        verify,
-    )
-    stats = SyncEngine(settings, store, plex, jellyfin, report_store).run()
-    (data_dir / "healthy").write_text("ok\n", encoding="utf-8")
-    logging.getLogger("jellyplexsync").info("Sync finished: %s", stats)
-
-
 def main() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
@@ -54,10 +25,10 @@ def main() -> None:
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     report_store = ReportStore(data_dir / "last-report.json")
-    # Web-UI zuerst starten, damit Dry-Run auch bei Sync-Fehlern erreichbar ist.
+    runner = SyncRunner(settings, report_store)
     if settings.web_enabled:
         try:
-            start_web(report_store, settings.web_host, settings.web_port)
+            start_web(runner, settings.web_host, settings.web_port)
         except OSError:
             log.exception(
                 "Web-UI konnte Port %s nicht binden. WEB_PORT und Container-Port pruefen.",
@@ -70,14 +41,7 @@ def main() -> None:
         settings.dry_run,
         f"{settings.web_host}:{settings.web_port}" if settings.web_enabled else "off",
     )
-    while True:
-        try:
-            run_once(settings, report_store)
-        except Exception:
-            log.exception("Sync run failed")
-        if settings.run_only_once:
-            return
-        time.sleep(max(30, settings.sleep_duration))
+    runner.loop()
 
 
 if __name__ == "__main__":

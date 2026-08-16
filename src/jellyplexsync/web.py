@@ -4,10 +4,7 @@ import json
 import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import urlparse
-
-from jellyplexsync.report import ReportStore
 
 log = logging.getLogger("jellyplexsync")
 
@@ -25,7 +22,6 @@ PAGE = """<!DOCTYPE html>
       --muted: #8b9aab;
       --accent: #3d9cf0;
       --ok: #3ecf8e;
-      --warn: #f0b429;
       --dry: #c084fc;
       --line: #2a3542;
     }
@@ -40,7 +36,7 @@ PAGE = """<!DOCTYPE html>
     main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
     h1 { margin: 0 0 .35rem; font-size: 1.75rem; letter-spacing: -.02em; }
     .sub { color: var(--muted); margin-bottom: 1.5rem; }
-    .row { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.25rem; }
+    .row { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.25rem; align-items: center; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -60,6 +56,7 @@ PAGE = """<!DOCTYPE html>
     .badge.dry { background: color-mix(in srgb, var(--dry) 25%, transparent); color: #e9d5ff; }
     .badge.live { background: color-mix(in srgb, var(--ok) 22%, transparent); color: #bbf7d0; }
     .badge.err { background: #7f1d1d; color: #fecaca; }
+    .badge.run { background: #1e3a5f; color: #93c5fd; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -83,18 +80,22 @@ PAGE = """<!DOCTYPE html>
       font-weight: 650;
       cursor: pointer;
     }
+    button.secondary { background: #334155; color: var(--text); }
     h2 { margin: 2rem 0 .75rem; font-size: 1.1rem; }
+    #toast { color: var(--muted); }
   </style>
 </head>
 <body>
   <main>
     <h1>jelly-plex-sync</h1>
-    <p class="sub">Lokale Übersicht der letzten Sync-Läufe. Bei Dry Run siehst du hier, was geschrieben würde — ohne Änderungen.</p>
+    <p class="sub">Sync laeuft periodisch (nicht live waehrend des Abspielens). Pause die Folge kurz, dann „Jetzt synchronisieren“.</p>
     <div class="row" id="meta"></div>
     <div class="row">
-      <button type="button" onclick="loadReport()">Aktualisieren</button>
+      <button type="button" onclick="syncNow()">Jetzt synchronisieren</button>
+      <button type="button" class="secondary" onclick="loadReport()">Aktualisieren</button>
+      <span id="toast"></span>
     </div>
-    <h2>Geplante / ausgeführte Aktionen</h2>
+    <h2>Geplante / ausgefuehrte Aktionen</h2>
     <div id="actions"></div>
     <h2>Neu erkannte Titel</h2>
     <div id="newitems"></div>
@@ -108,67 +109,71 @@ PAGE = """<!DOCTYPE html>
     function esc(t) {
       return String(t ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
+    async function syncNow() {
+      document.getElementById("toast").textContent = "Sync wird gestartet…";
+      const res = await fetch("/api/sync-now", { method: "POST" });
+      const data = await res.json();
+      document.getElementById("toast").textContent = data.message || "";
+      setTimeout(loadReport, 2000);
+      setTimeout(loadReport, 8000);
+    }
     async function loadReport() {
       const res = await fetch("/api/report");
       const data = await res.json();
       const meta = document.getElementById("meta");
       const stats = data.stats || {};
       const badge = data.dry_run
-        ? '<span class="badge dry">DRY RUN — nichts geschrieben</span>'
-        : '<span class="badge live">LIVE — Änderungen geschrieben</span>';
-      const status = data.ok === false
-        ? '<span class="badge err">Fehler</span>'
-        : '';
+        ? '<span class="badge dry">DRY RUN</span>'
+        : '<span class="badge live">LIVE</span>';
+      const runBadge = data.runner_status === "running"
+        ? '<span class="badge run">laeuft…</span>'
+        : (data.ok === false || data.runner_status === "error"
+          ? '<span class="badge err">Fehler</span>' : '');
       meta.innerHTML = `
-        <div class="card"><div class="label">Modus</div><div class="value">${badge} ${status}</div></div>
+        <div class="card"><div class="label">Modus</div><div class="value">${badge} ${runBadge}</div></div>
         <div class="card"><div class="label">Aktionen</div><div class="value">${(data.actions||[]).length}</div></div>
         <div class="card"><div class="label">Plex → JF</div><div class="value">${stats.updated_jellyfin ?? 0}</div></div>
         <div class="card"><div class="label">JF → Plex</div><div class="value">${stats.updated_plex ?? 0}</div></div>
-        <div class="card"><div class="label">Übersprungen</div><div class="value">${stats.skipped ?? 0}</div></div>
-        <div class="card"><div class="label">Neu</div><div class="value">${stats.new_items ?? 0}</div></div>
+        <div class="card"><div class="label">Uebersprungen</div><div class="value">${stats.skipped ?? 0}</div></div>
+        <div class="card"><div class="label">Intervall</div><div class="value" style="font-size:1rem">${esc(data.interval_seconds || "—")}s</div></div>
         <div class="card"><div class="label">Letzter Lauf</div><div class="value" style="font-size:.95rem">${esc(data.finished_at || data.message || "—")}</div></div>
       `;
-      if (data.error) {
-        meta.innerHTML += `<div class="card" style="flex:1 1 100%"><div class="label">Fehler</div><div class="value" style="font-size:1rem;color:#fecaca">${esc(data.error)}</div></div>`;
+      const err = data.error || data.runner_error;
+      if (err) {
+        meta.innerHTML += `<div class="card" style="flex:1 1 100%"><div class="label">Fehler</div><div class="value" style="font-size:1rem;color:#fecaca">${esc(err)}</div></div>`;
       }
       const actions = data.actions || [];
       const box = document.getElementById("actions");
-      if (!actions.length) {
-        box.innerHTML = '<div class="empty">Keine Aktionen in diesem Lauf. Entweder war alles schon synchron, oder der nächste Scan steht noch aus.</div>';
+      if (!data.finished_at && !err) {
+        box.innerHTML = '<div class="empty">Noch kein abgeschlossener Sync. Klicke „Jetzt synchronisieren“.</div>';
+      } else if (!actions.length) {
+        box.innerHTML = '<div class="empty">Keine Aktionen. Beim Abspielen: kurz pausieren, dann syncen. Fortschritt wird erst ab ca. 30 Sekunden und bei spuerbarer Differenz uebernommen.</div>';
       } else {
         box.innerHTML = `<table>
-          <thead><tr>
-            <th>Richtung</th><th>Titel</th><th>Aktion</th><th>Quelle</th><th>Ziel</th>
-          </tr></thead>
+          <thead><tr><th>Richtung</th><th>Titel</th><th>Aktion</th><th>Quelle</th><th>Ziel</th></tr></thead>
           <tbody>${actions.map(a => `
             <tr>
               <td class="dir">${esc(a.source_server)} → ${esc(a.dest_server)}</td>
-              <td><strong>${esc(a.title)}</strong><div class="muted">${esc(a.kind)} · ${esc(a.library)}${a.user ? " · " + esc(a.user) : ""}</div></td>
-              <td>${esc(a.reason)}${a.dry_run ? ' <span class="badge dry">würde</span>' : ''}</td>
+              <td><strong>${esc(a.title)}</strong><div class="muted">${esc(a.kind)} · ${esc(a.library)}</div></td>
+              <td>${esc(a.reason)}${a.dry_run ? ' <span class="badge dry">wuerde</span>' : ''}</td>
               <td class="muted">${a.source_played ? "gesehen" : fmtSec(a.source_position)}</td>
               <td class="muted">${a.dest_played ? "gesehen" : fmtSec(a.dest_position)}</td>
             </tr>`).join("")}</tbody></table>`;
       }
       const news = data.new_items || [];
-      const nbox = document.getElementById("newitems");
-      if (!news.length) {
-        nbox.innerHTML = '<div class="empty">Keine neu erkannten Titel.</div>';
-      } else {
-        nbox.innerHTML = `<table><thead><tr><th>Server</th><th>Titel</th></tr></thead>
-          <tbody>${news.map(n => `<tr><td class="dir">${esc(n.server)}</td><td>${esc(n.title)}</td></tr>`).join("")}</tbody></table>`;
-      }
+      document.getElementById("newitems").innerHTML = news.length
+        ? `<table><thead><tr><th>Server</th><th>Titel</th></tr></thead><tbody>${news.map(n => `<tr><td class="dir">${esc(n.server)}</td><td>${esc(n.title)}</td></tr>`).join("")}</tbody></table>`
+        : '<div class="empty">Keine neu erkannten Titel.</div>';
     }
     loadReport();
-    setInterval(loadReport, 15000);
+    setInterval(loadReport, 5000);
   </script>
 </body>
 </html>
 """
 
 
-def start_web(report_store: ReportStore, host: str, port: int) -> ThreadingHTTPServer:
-    store = report_store
-
+def start_web(runner, host: str, port: int) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args) -> None:
             log.debug("web: " + fmt, *args)
@@ -187,11 +192,19 @@ def start_web(report_store: ReportStore, host: str, port: int) -> ThreadingHTTPS
                 self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
                 return
             if path == "/api/report":
-                payload = json.dumps(store.latest()).encode("utf-8")
+                payload = json.dumps(runner.snapshot()).encode("utf-8")
                 self._send(200, payload, "application/json; charset=utf-8")
                 return
             if path == "/health":
                 self._send(200, b"ok", "text/plain")
+                return
+            self._send(404, b"not found", "text/plain")
+
+        def do_POST(self) -> None:  # noqa: N802
+            path = urlparse(self.path).path
+            if path == "/api/sync-now":
+                payload = json.dumps(runner.request_now()).encode("utf-8")
+                self._send(200, payload, "application/json; charset=utf-8")
                 return
             self._send(404, b"not found", "text/plain")
 
