@@ -29,31 +29,41 @@ Oder dieselbe Datei per Samba nach `\\TOWER\flash\config\plugins\dockerMan\templ
 ### 2. Container anlegen
 
 1. **Docker** → **Container hinzufügen**
-2. Bei **Vorlage** den Eintrag **jelly-plex-sync** wählen (User-Templates stehen oben in der Liste)
-3. Ausfüllen:
-   - **Plex URL** z. B. `http://192.168.1.10:32400` (LAN-IP, nicht `localhost`)
-   - **Plex Token**
-   - **Jellyfin URL** z. B. `http://192.168.1.10:8096`
-   - **Jellyfin API Key**
-   - **User Mapping** falls die Namen anders sind: `PlexName=JellyfinName`
-4. Appdata belassen: `/mnt/user/appdata/jelly-plex-sync`
-5. **Anwenden**
+2. Bei **Vorlage** den Eintrag **jelly-plex-sync** wählen
+3. **Kein Port** anlegen, nichts in der Firewall/Router freigeben
+4. Ausfüllen:
+   - **Plex URL** / **Jellyfin URL:** `http://172.17.0.1:32400` und `http://172.17.0.1:8096` (Unraid-Host im Docker-Netz, nicht das Internet)
+   - **Plex Appdata:** dein Plex-Ordner, z. B. `/mnt/user/appdata/plex` (read-only) — Token wird lokal aus `Preferences.xml` gelesen
+   - **Jellyfin Benutzer:** dein lokaler Jellyfin-Name. **Passwort leer**, wenn der User keins hat
+   - **User Mapping** nur wenn die Namen anders sind
+5. Appdata: `/mnt/user/appdata/jelly-plex-sync`
+6. **Anwenden**
 
-Falls das Image nicht gezogen wird: auf GitHub das Paket [jelly-plex-sync](https://github.com/PaulG67/jelly-plex-sync/pkgs/container/jelly-plex-sync) auf **Public** stellen.
+Die App spricht nur Plex und Jellyfin auf demselben Server an. Es gibt keine WebUI und keine Veröffentlichung ins Internet.
 
-## Tokens
+Falls Plex den Token aus der Appdata nicht akzeptiert: in Plex unter **Settings → Network** bei *List of IP addresses and networks that are allowed without auth* `172.16.0.0/12` eintragen (nur LAN/Docker, nicht WAN).
 
-- **Plex:** Der Token bestimmt, wessen Verlauf gelesen und geschrieben wird (in der Regel der Server-Admin).
-- **Jellyfin:** Ein API-Key mit Admin-Rechten kann den Status aller gemappten Nutzer setzen. In Jellyfin unter **Dashboard → Networking** das Docker-Subnetz zu den LAN-Netzwerken hinzufügen, sonst liefert die API HTML statt JSON.
+In Jellyfin unter **Dashboard → Networking** das Docker-Subnetz zu den LAN-Netzen nehmen.
+
+## Lokaler Zugang (ohne Internet, ohne API-Key)
+
+Plex und Jellyfin brauchen trotzdem eine **lokale Identität**, sonst wissen sie nicht, wessen Verlauf geschrieben werden soll. Die Identität bleibt auf Unraid:
+
+- **Plex:** Token wird aus der gemounteten Appdata gelesen. Nichts eintippen, nichts nach außen.
+- **Jellyfin:** Login mit Benutzername (Passwort optional). Kein API-Key im Dashboard nötig.
+- Tokens/Passwörter optional nur als Fallback in den erweiterten Feldern.
 
 ## Umgebungsvariablen
 
 | Variable | Default | Bedeutung |
 | --- | --- | --- |
-| `PLEX_BASEURL` | — | Plex-URL |
-| `PLEX_TOKEN` | — | Plex-Token |
-| `JELLYFIN_BASEURL` | — | Jellyfin-URL |
-| `JELLYFIN_TOKEN` | — | Jellyfin API-Key |
+| `PLEX_BASEURL` | `http://172.17.0.1:32400` | Plex nur über Docker-Host |
+| `PLEX_TOKEN` | leer | Optional; sonst aus Plex-Appdata |
+| `PLEX_APPDATA` | `/plex` | Mount der Plex-Appdata |
+| `JELLYFIN_BASEURL` | `http://172.17.0.1:8096` | Jellyfin nur über Docker-Host |
+| `JELLYFIN_USERNAME` | leer | Lokaler User statt API-Key |
+| `JELLYFIN_PASSWORD` | leer | Optional |
+| `JELLYFIN_TOKEN` | leer | Optionaler API-Key |
 | `USER_MAPPING` | leer | `plex=jellyfin` oder JSON |
 | `SLEEP_DURATION` | `300` | Intervall in Sekunden |
 | `DRY_RUN` | `false` | Nur loggen |

@@ -8,15 +8,43 @@ from jellyplexsync.models import WatchState
 TICKS_PER_SECOND = 10_000_000
 
 
+AUTH_HEADER = (
+    'MediaBrowser Client="jelly-plex-sync", Device="unraid", DeviceId="jelly-plex-sync", Version="1.0.0"'
+)
+
+
 class JellyfinClient:
     def __init__(self, baseurl: str, token: str, timeout: int, verify: bool) -> None:
         self.baseurl = baseurl.rstrip("/")
         self.headers = {
-            "X-Emby-Token": token,
-            "X-Emby-Authorization": 'MediaBrowser Client="jelly-plex-sync", Device="docker", DeviceId="jelly-plex-sync", Version="1.0.0"',
+            "Authorization": AUTH_HEADER,
+            "X-Emby-Authorization": AUTH_HEADER,
             "Accept": "application/json",
         }
+        if token:
+            self.headers["X-Emby-Token"] = token
+            self.headers["X-Emby-Authorization"] = f'{AUTH_HEADER}, Token="{token}"'
         self.http = make_client(timeout, verify)
+
+    @classmethod
+    def login(cls, baseurl: str, username: str, password: str, timeout: int, verify: bool) -> str:
+        http = make_client(timeout, verify)
+        response = request(
+            http,
+            "POST",
+            f"{baseurl.rstrip('/')}/Users/AuthenticateByName",
+            json={"Username": username, "Pw": password},
+            headers={
+                "Authorization": AUTH_HEADER,
+                "X-Emby-Authorization": AUTH_HEADER,
+                "Accept": "application/json",
+            },
+        )
+        data = response.json()
+        token = data.get("AccessToken")
+        if not token:
+            raise RuntimeError("Jellyfin-Login ohne AccessToken")
+        return token
 
     def _get(self, path: str, params: dict | None = None) -> dict | list:
         response = request(self.http, "GET", f"{self.baseurl}{path}", params=params, headers=self.headers)

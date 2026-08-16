@@ -13,10 +13,16 @@ class PlexClient:
         self.token = token
         self.http = make_client(timeout, verify)
 
-    def _get(self, path: str, params: dict | None = None) -> ET.Element:
-        merged = {"X-Plex-Token": self.token}
+    def _params(self, params: dict | None = None) -> dict:
+        merged: dict[str, str] = {}
+        if self.token:
+            merged["X-Plex-Token"] = self.token
         if params:
             merged.update(params)
+        return merged
+
+    def _get(self, path: str, params: dict | None = None) -> ET.Element:
+        merged = self._params(params)
         response = request(
             self.http,
             "GET",
@@ -27,10 +33,7 @@ class PlexClient:
         return ET.fromstring(response.text)
 
     def _get_ok(self, path: str, params: dict | None = None) -> None:
-        merged = {"X-Plex-Token": self.token}
-        if params:
-            merged.update(params)
-        request(self.http, "GET", f"{self.baseurl}{path}", params=merged)
+        request(self.http, "GET", f"{self.baseurl}{path}", params=self._params(params))
 
     def users(self) -> list[dict[str, str]]:
         users: list[dict[str, str]] = []

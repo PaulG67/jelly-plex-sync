@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from jellyplexsync.config import Settings, get_settings
+from jellyplexsync.credentials import resolve_jellyfin_token, resolve_plex_token
 from jellyplexsync.jellyfin import JellyfinClient
 from jellyplexsync.plex import PlexClient
 from jellyplexsync.store import StateStore
@@ -25,10 +26,17 @@ def run_once(settings: Settings) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(data_dir / "state.db")
     verify = not settings.ssl_bypass
-    plex = PlexClient(settings.plex_baseurl, settings.plex_token, settings.request_timeout, verify)
+    plex_token = resolve_plex_token(settings)
+    jelly_token = resolve_jellyfin_token(
+        settings,
+        lambda user, password: JellyfinClient.login(
+            settings.jellyfin_baseurl, user, password, settings.request_timeout, verify
+        ),
+    )
+    plex = PlexClient(settings.plex_baseurl, plex_token, settings.request_timeout, verify)
     jellyfin = JellyfinClient(
         settings.jellyfin_baseurl,
-        settings.jellyfin_token,
+        jelly_token,
         settings.request_timeout,
         verify,
     )

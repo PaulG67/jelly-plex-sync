@@ -44,10 +44,15 @@ class Settings(BaseSettings):
     request_timeout: int = 60
     data_dir: str = "/data"
 
-    plex_baseurl: str
-    plex_token: str
-    jellyfin_baseurl: str
-    jellyfin_token: str
+    plex_baseurl: str = "http://172.17.0.1:32400"
+    plex_token: str = ""
+    plex_token_file: str = ""
+    plex_appdata: str = "/plex"
+    jellyfin_baseurl: str = "http://172.17.0.1:8096"
+    jellyfin_token: str = ""
+    jellyfin_token_file: str = ""
+    jellyfin_username: str = ""
+    jellyfin_password: str = ""
 
     user_mapping: dict[str, str] = Field(default_factory=dict)
     library_mapping: dict[str, str] = Field(default_factory=dict)
