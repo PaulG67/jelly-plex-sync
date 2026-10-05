@@ -13,7 +13,7 @@
   <Category>MediaApp:Other Status:Beta</Category>
   <WebUI>http://[IP]:[PORT:8787]/WebUI>
   <TemplateURL>https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/unraid/my-jelly-plex-sync.xml</TemplateURL>
-  <Icon>https://cdn.jsdelivr.net/gh/selfhst/icons/png/jellyfin.png</Icon>
+  <Icon>https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
   <PostArgs/>
   <GitHub>https://github.com/PaulG67/jelly-plex-sync</GitHub>

@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+LABEL net.unraid.docker.icon="https://raw.githubusercontent.com/PaulG67/jelly-plex-sync/main/icon.png"
+
 WORKDIR /app
 COPY requirements.txt pyproject.toml /app/
 COPY src /app/src
