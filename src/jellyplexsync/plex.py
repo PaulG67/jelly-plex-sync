@@ -12,7 +12,7 @@ log = logging.getLogger("jellyplexsync")
 PLEX_CLIENT_HEADERS = {
     "Accept": "application/xml",
     "X-Plex-Product": "jelly-plex-sync",
-    "X-Plex-Version": "1.0.5",
+    "X-Plex-Version": "1.0.8",
     "X-Plex-Client-Identifier": "jelly-plex-sync-unraid",
     "X-Plex-Platform": "Linux",
     "X-Plex-Device": "Docker",
@@ -41,6 +41,16 @@ class PlexClient:
             merged.update({str(k): str(v) for k, v in params.items()})
         return merged
 
+    def _request(self, method: str, path: str, params: dict | None = None) -> None:
+        response = request(
+            self.http,
+            method,
+            f"{self.baseurl}{path}",
+            params=self._params(params),
+            headers=self._headers(),
+        )
+        log.debug("Plex %s %s -> %s", method, path, response.status_code)
+
     def _get(self, path: str, params: dict | None = None) -> ET.Element:
         response = request(
             self.http,
@@ -50,16 +60,6 @@ class PlexClient:
             headers=self._headers(),
         )
         return ET.fromstring(response.text)
-
-    def _get_ok(self, path: str, params: dict | None = None) -> None:
-        response = request(
-            self.http,
-            "GET",
-            f"{self.baseurl}{path}",
-            params=self._params(params),
-            headers=self._headers(),
-        )
-        log.debug("Plex %s -> %s", path, response.status_code)
 
     def users(self) -> list[dict[str, str]]:
         users: list[dict[str, str]] = []
@@ -131,8 +131,8 @@ class PlexClient:
         view_count = int(node.attrib.get("viewCount") or 0)
         last_viewed = node.attrib.get("lastViewedAt")
         added = node.attrib.get("addedAt")
-        ratio = (view_offset / duration_ms) if duration_ms else 0.0
-        played = ratio >= 0.9 or (view_count > 0 and view_offset == 0)
+        # Plex behandelt "gesehen" ueber viewCount, nicht ueber Fortschrittsratio.
+        played = view_count > 0
         title = node.attrib.get("title") or ""
         if kind == "episode":
             show = node.attrib.get("grandparentTitle") or ""
@@ -157,28 +157,17 @@ class PlexClient:
         )
 
     def mark_played(self, item_id: str, duration_seconds: float = 0.0) -> None:
-        # ratingKey und Metadata-Pfad – je nach PMS-Version greift eines davon
-        for key in (item_id, f"/library/metadata/{item_id}"):
-            try:
-                self._get_ok(
-                    "/:/scrobble",
-                    {"identifier": "com.plexapp.plugins.library", "key": key},
-                )
-                log.info("Plex mark_played ok key=%s", key)
-                break
-            except Exception:
-                log.warning("Plex scrobble fehlgeschlagen fuer key=%s", key, exc_info=True)
-        else:
-            raise RuntimeError(f"Plex mark_played fehlgeschlagen fuer {item_id}")
-
-        # Resume-Punkt zuruecksetzen, sonst bleibt alter viewOffset
-        try:
-            self.set_progress(item_id, 0.0, duration_seconds or 1.0, state="stopped")
-        except Exception:
-            log.debug("Plex viewOffset-Reset nach scrobble optional fehlgeschlagen", exc_info=True)
+        # Offizielle API: PUT /:/scrobble mit ratingKey
+        self._request(
+            "PUT",
+            "/:/scrobble",
+            {"identifier": "com.plexapp.plugins.library", "key": item_id},
+        )
+        log.info("Plex mark_played ok ratingKey=%s", item_id)
 
     def mark_unplayed(self, item_id: str) -> None:
-        self._get_ok(
+        self._request(
+            "PUT",
             "/:/unscrobble",
             {"identifier": "com.plexapp.plugins.library", "key": item_id},
         )
@@ -187,34 +176,22 @@ class PlexClient:
         self,
         item_id: str,
         position_seconds: float,
-        duration_seconds: float,
+        duration_seconds: float = 0.0,
         state: str = "stopped",
     ) -> None:
+        # Offline-Resume laut plexapi: PUT /:/progress (nicht /:/timeline)
         time_ms = max(0, int(position_seconds * 1000))
-        duration_ms = max(time_ms + 1, int((duration_seconds or position_seconds or 1) * 1000))
+        if time_ms <= 0:
+            log.warning("Plex set_progress ignoriert time=0 fuer %s", item_id)
+            return
         params = {
-            "ratingKey": item_id,
-            "key": f"/library/metadata/{item_id}",
+            "key": item_id,
             "identifier": "com.plexapp.plugins.library",
-            "state": state,
             "time": str(time_ms),
-            "duration": str(duration_ms),
-            "continuing": "0",
-            "context": "library",
+            "state": state,
         }
-        self._get_ok("/:/timeline", params)
-        # Manche PMS-Builds erwarten trailing slash
-        try:
-            self._get_ok("/:/timeline/", params)
-        except Exception:
-            pass
-        log.info(
-            "Plex set_progress item=%s time_ms=%s duration_ms=%s state=%s",
-            item_id,
-            time_ms,
-            duration_ms,
-            state,
-        )
+        self._request("PUT", "/:/progress", params)
+        log.info("Plex set_progress ok ratingKey=%s time_ms=%s", item_id, time_ms)
 
 
 def _epoch(value: str | None) -> datetime | None:

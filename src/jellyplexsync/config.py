@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     sync_new_items: bool = True
 
     watched_percent: int = 90
-    progress_min_seconds: int = 30
+    progress_min_seconds: int = 60
     progress_delta_seconds: int = 10
     ssl_bypass: bool = False
 

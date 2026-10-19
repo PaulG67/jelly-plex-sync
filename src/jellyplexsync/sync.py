@@ -153,11 +153,12 @@ class SyncEngine:
                 stats["skipped"] += 1
                 continue
             try:
-                self._write(source, dest, dest_server, jelly_user_id, reason, report)
-                if dest_server == "jellyfin":
-                    stats["updated_jellyfin"] += 1
-                else:
-                    stats["updated_plex"] += 1
+                wrote = self._write(source, dest, dest_server, jelly_user_id, reason, report)
+                if wrote:
+                    if dest_server == "jellyfin":
+                        stats["updated_jellyfin"] += 1
+                    else:
+                        stats["updated_plex"] += 1
             except Exception:
                 stats["errors"] += 1
                 log.exception("Failed updating %s for %s", dest_server, source.title)
@@ -170,7 +171,7 @@ class SyncEngine:
         jelly_user_id: str | None,
         reason: str,
         report: SyncReport | None,
-    ) -> None:
+    ) -> bool:
         played = source.effective_played(self.settings.watched_percent)
         position = 0.0 if played else source.position_seconds
         log.info("%s -> %s: %s (%s)", source.server, dest_server, dest.title, reason)
@@ -200,7 +201,7 @@ class SyncEngine:
                 )
             )
         if self.settings.dry_run:
-            return
+            return False
         if dest_server == "jellyfin":
             self.jellyfin.apply(jelly_user_id, dest, played, position)
             plex_item = source if source.server == "plex" else dest
@@ -220,3 +221,4 @@ class SyncEngine:
             position,
             source.last_played or datetime.now(timezone.utc),
         )
+        return True
