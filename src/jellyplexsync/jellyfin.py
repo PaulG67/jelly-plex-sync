@@ -8,30 +8,34 @@ from jellyplexsync.models import WatchState
 TICKS_PER_SECOND = 10_000_000
 
 
-AUTH_HEADER = (
-    'MediaBrowser Client="jelly-plex-sync", Device="unraid", DeviceId="jelly-plex-sync", Version="1.0.0"'
-)
+def _auth_header(token: str = "") -> str:
+    base = (
+        'MediaBrowser Client="jelly-plex-sync", Device="unraid", '
+        'DeviceId="jelly-plex-sync", Version="1.0.9"'
+    )
+    if token:
+        return f'{base}, Token="{token}"'
+    return base
 
 
 class JellyfinClient:
     def __init__(self, baseurl: str, token: str, timeout: int, verify: bool) -> None:
         self.baseurl = baseurl.rstrip("/")
+        # X-Emby-Token reicht fuer API-Keys und User-Sessions; Authorization zusaetzlich.
         self.headers = {
-            "Authorization": AUTH_HEADER,
-            "X-Emby-Authorization": AUTH_HEADER,
             "Accept": "application/json",
+            "Authorization": _auth_header(token),
         }
         if token:
             self.headers["X-Emby-Token"] = token
-            self.headers["X-Emby-Authorization"] = f'{AUTH_HEADER}, Token="{token}"'
+            self.headers["X-MediaBrowser-Token"] = token
         self.http = make_client(timeout, verify)
 
     @classmethod
     def login(cls, baseurl: str, username: str, password: str, timeout: int, verify: bool) -> str:
         http = make_client(timeout, verify)
         headers = {
-            "Authorization": AUTH_HEADER,
-            "X-Emby-Authorization": AUTH_HEADER,
+            "Authorization": _auth_header(),
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
@@ -46,11 +50,11 @@ class JellyfinClient:
             )
         except Exception as exc:
             raise RuntimeError(
-                "Jellyfin-Login 401/fehlgeschlagen für User "
-                f"'{username}'. Passwort pruefen ODER besser: in Jellyfin unter "
-                "Dashboard → API-Keys einen Key anlegen und als JELLYFIN_TOKEN setzen "
-                "(Benutzerfeld dann leer lassen). Original: "
-                f"{exc}"
+                "Jellyfin 401: Login fuer "
+                f"'{username}' abgelehnt. Loesung: Jellyfin → Dashboard → API-Keys → "
+                "neuen Key anlegen, in Unraid unter „Jellyfin API Key“ eintragen und "
+                "„Jellyfin Benutzer“ sowie Passwort LEER lassen. "
+                f"Detail: {exc}"
             ) from exc
         data = response.json()
         token = data.get("AccessToken")
@@ -66,8 +70,19 @@ class JellyfinClient:
         request(self.http, "POST", f"{self.baseurl}{path}", json=json, params=params, headers=self.headers)
 
     def users(self) -> list[dict[str, str]]:
-        data = self._get("/Users")
-        return [{"id": user["Id"], "name": user["Name"]} for user in data if not user.get("Policy", {}).get("IsDisabled")]
+        # /Users braucht Admin. Normale User-Tokens und manche Keys liefern 401.
+        try:
+            data = self._get("/Users")
+            if isinstance(data, list):
+                return [
+                    {"id": user["Id"], "name": user["Name"]}
+                    for user in data
+                    if not user.get("Policy", {}).get("IsDisabled")
+                ]
+        except Exception:
+            pass
+        me = self._get("/Users/Me")
+        return [{"id": me["Id"], "name": me["Name"]}]
 
     def items_for_user(self, user_id: str, user_name: str, allowed_libraries: set[str] | None, blocked_libraries: set[str] | None) -> list[WatchState]:
         views = self._get(f"/Users/{user_id}/Views").get("Items", [])
